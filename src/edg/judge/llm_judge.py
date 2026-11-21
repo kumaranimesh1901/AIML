@@ -18,6 +18,7 @@ from edg.db.models import (
     JudgeSample,
     PolicyDocument,
 )
+from edg.db.repositories import source_judgements_only
 from edg.judge.claims import extract_claims
 from edg.judge.evidence import EvidenceBundle, assemble_evidence
 from edg.judge.prompts import (
@@ -232,6 +233,7 @@ class HybridJudge:
                 Judgement.interaction_id == interaction_id,
                 Judgement.judge_version == self.judge_version,
                 Judgement.prompt_hash == self.prompt_hash,
+                source_judgements_only(),
             )
             .order_by(Judgement.created_at.desc())
             .limit(1)

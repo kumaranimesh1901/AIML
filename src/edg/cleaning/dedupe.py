@@ -20,12 +20,14 @@ def assign_duplicate_groups(
     *,
     cosine_threshold: float = 0.95,
     embed_fn: Callable[[list[str]], np.ndarray] | None = None,
+    group_prefix: str = "DUP",
 ) -> dict[str, tuple[str, int, bool]]:
     """Group exact and near-duplicate queries within the same intent.
 
     Args:
         items: list of `(interaction_id, intent_label, clean_query)`.
         cosine_threshold: minimum cosine similarity for near-duplicate grouping.
+        group_prefix: prefix for generated group ids (keeps separately-deduped tiers disjoint).
         embed_fn: optional embedding function returning L2-normalized `(N, D)` float32 array.
 
     Returns:
@@ -70,7 +72,7 @@ def assign_duplicate_groups(
             if matched_idx is not None:
                 clusters[matched_idx][2].append(h)
             else:
-                gid = f"DUP-{intent[:16]}-{h[:10]}"
+                gid = f"{group_prefix}-{intent[:16]}-{h[:10]}"
                 clusters.append((gid, v, [h]))
 
         # Assign dup_group_id, dup_count, is_representative

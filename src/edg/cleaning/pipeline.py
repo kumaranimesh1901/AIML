@@ -17,6 +17,7 @@ from edg.config import AppConfig
 from edg.db.models import InteractionClean, InteractionRaw
 from edg.ingestion.ingest import validate_raw_row
 from edg.logging import get_logger
+from edg.sut.failure_injector import CONTROLLED_SOURCE_TAG
 
 logger = get_logger(__name__)
 
@@ -104,16 +105,25 @@ def run_cleaning_pipeline(
 
         valid_staging.append((row, p_query, p_response, pii_ref))
 
-    # Dedupe valid new rows within intent
-    dedupe_input = [
-        (row.interaction_id, row.intent_label or "unknown", p_query)
-        for row, p_query, _p_resp, _ref in valid_staging
-    ]
-    dedupe_map = assign_duplicate_groups(
-        dedupe_input,
-        cosine_threshold=config.cleaning.near_dup_cosine_threshold,
-        embed_fn=embed_fn,
-    )
+    # Dedupe valid new rows within intent, separately per data tier. synthetic_controlled rewrites
+    # reuse their natural source's exact user_query; grouping them together would let a controlled
+    # row become the representative of natural duplicates, which clustering (natural-only) then
+    # cannot see, silently pushing those natural rows into noise.
+    dedupe_map: dict[str, tuple[str, int, bool]] = {}
+    for is_controlled, group_prefix in ((False, "DUP"), (True, "DUPC")):
+        dedupe_input = [
+            (row.interaction_id, row.intent_label or "unknown", p_query)
+            for row, p_query, _p_resp, _ref in valid_staging
+            if (row.source_tag == CONTROLLED_SOURCE_TAG) == is_controlled
+        ]
+        dedupe_map.update(
+            assign_duplicate_groups(
+                dedupe_input,
+                cosine_threshold=config.cleaning.near_dup_cosine_threshold,
+                embed_fn=embed_fn,
+                group_prefix=group_prefix,
+            )
+        )
 
     dup_group_ids: set[str] = set()
     non_rep_count = 0

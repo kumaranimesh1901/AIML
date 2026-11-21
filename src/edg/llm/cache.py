@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from sqlalchemy import Engine
+from sqlalchemy import Connection, Engine
 
 from edg.db.models import LLMCacheEntry
 from edg.db.session import get_session
@@ -47,7 +47,7 @@ def make_cache_key(
 class LLMCache:
     """Cache for LLM responses supporting both in-memory and SQLAlchemy DB backends."""
 
-    def __init__(self, engine: Engine | None = None) -> None:
+    def __init__(self, engine: Engine | Connection | None = None) -> None:
         self._engine = engine
         self._memory: dict[str, tuple[str, float]] = {}
 

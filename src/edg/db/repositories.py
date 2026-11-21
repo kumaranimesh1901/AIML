@@ -8,10 +8,11 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.orm import Session
 
 from edg.config import AppConfig
-from edg.db.models import PipelineRun, utcnow
+from edg.db.models import EvalResult, Judgement, PipelineRun, utcnow
 from edg.logging import get_logger
 
 logger = get_logger(__name__)
@@ -129,3 +130,15 @@ def track_run(
             extra={"run_id": run_id, "step": step, "error": str(exc)},
         )
         raise
+
+
+def source_judgements_only() -> ColumnElement[bool]:
+    """SQL filter selecting judgements of ORIGINAL logged responses only.
+
+    Release replays persist judgements of a *newly generated* model response under the source
+    test case's interaction_id. Those rows are linked from `eval_results.judgement_id` and must
+    never be treated as judgements of the logged `interactions_raw.ai_response` (calibration
+    pairing, judge caching, labeling, test-case mining).
+    """
+    replay_ids = select(EvalResult.judgement_id).where(EvalResult.judgement_id.is_not(None))
+    return Judgement.judgement_id.notin_(replay_ids)

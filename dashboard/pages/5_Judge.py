@@ -17,6 +17,7 @@ from sqlalchemy import select
 from edg.annotation.agreement import _evaluate_split
 from edg.annotation.ui_helpers import save_single_annotation
 from edg.db.models import HumanAnnotation, InteractionRaw, Judgement, StateSnapshot
+from edg.db.repositories import source_judgements_only
 from edg.db.session import get_session
 from edg.judge.schema import DIMENSIONS
 from edg.world.taxonomy import load_taxonomy
@@ -27,7 +28,12 @@ st.title("5. Hybrid LLM Judge & Human Calibration")
 engine = get_engine()
 with get_session(engine) as session:
     judgements = list(
-        session.scalars(select(Judgement).order_by(Judgement.created_at.desc()).limit(200)).all()
+        session.scalars(
+            select(Judgement)
+            .where(source_judgements_only())
+            .order_by(Judgement.created_at.desc())
+            .limit(200)
+        ).all()
     )
     ann_count = len(list(session.scalars(select(HumanAnnotation.annotation_id)).all()))
 

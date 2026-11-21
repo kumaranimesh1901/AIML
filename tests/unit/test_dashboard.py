@@ -43,12 +43,10 @@ def test_no_hardcoded_or_illustrative_metrics_in_dashboard_code() -> None:
 
 @pytest.mark.parametrize("page_path", PAGE_FILES, ids=lambda p: p.name)
 def test_dashboard_page_loads_without_errors(
-    page_path: Path, monkeypatch: pytest.MonkeyPatch
+    page_path: Path, monkeypatch: pytest.MonkeyPatch, small_pipeline_db: str
 ) -> None:
     """Phase 10 acceptance test: every Streamlit page loads cleanly against the small DB."""
-    small_db = PROJECT_ROOT / "data" / "edg.db"
-    assert small_db.exists(), "Expected populated small run DB at data/edg.db"
-    monkeypatch.setenv("EDG_DATABASE_URL", f"sqlite:///{small_db}")
+    monkeypatch.setenv("EDG_DATABASE_URL", small_pipeline_db)
 
     at = AppTest.from_file(str(page_path), default_timeout=30)
     at.run()

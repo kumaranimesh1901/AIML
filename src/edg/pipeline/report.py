@@ -87,13 +87,23 @@ def write_results_summary_markdown(
     test_cal = _evaluate_split(session, split="judge_test", judge_version=config.judge.judge_version)
     priority_lift = _compute_priority_lift(session)
 
+    # Report only the most recent comparison run for this (release, baseline, candidate) triple;
+    # earlier `edg eval compare` runs stay in the DB for lineage but must not be double-counted.
+    pair_filter = (
+        RegressionReport.release_id == release_id,
+        RegressionReport.baseline_model_id == baseline_model_id,
+        RegressionReport.candidate_model_id == candidate_model_id,
+    )
+    latest_cmp_run_id = session.scalars(
+        select(RegressionReport.run_id)
+        .join(PipelineRun, PipelineRun.run_id == RegressionReport.run_id)
+        .where(*pair_filter)
+        .order_by(PipelineRun.started_at.desc(), RegressionReport.run_id.desc())
+        .limit(1)
+    ).first()
     reg_rows = list(
         session.scalars(
-            select(RegressionReport).where(
-                RegressionReport.release_id == release_id,
-                RegressionReport.baseline_model_id == baseline_model_id,
-                RegressionReport.candidate_model_id == candidate_model_id,
-            )
+            select(RegressionReport).where(*pair_filter, RegressionReport.run_id == latest_cmp_run_id)
         ).all()
     )
 
@@ -221,8 +231,8 @@ def write_results_summary_markdown(
         ]
     )
     key_scopes = {"overall", "slice:mined", "slice:random_control", "split:dev", "split:heldout"}
-    for r in sorted(reg_rows, key=lambda x: (x.scope, x.metric)):
-        if r.scope in key_scopes and r.metric in {
+    for rr in sorted(reg_rows, key=lambda x: (x.scope, x.metric)):
+        if rr.scope in key_scopes and rr.metric in {
             "pass_rate",
             "correctness_pass_rate",
             "relevance_pass_rate",
@@ -230,10 +240,10 @@ def write_results_summary_markdown(
             "failure_rate",
             "critical_failure_rate",
         }:
-            ci_str = f"[{_fmt_num(r.ci_low)}, {_fmt_num(r.ci_high)}]" if r.ci_low is not None else "N/A"
+            ci_str = f"[{_fmt_num(rr.ci_low)}, {_fmt_num(rr.ci_high)}]" if rr.ci_low is not None else "N/A"
             lines.append(
-                f"| `{r.scope}` | `{r.metric}` | {_fmt_pct(r.baseline_value)} | {_fmt_pct(r.candidate_value)} | "
-                f"{_fmt_num(r.diff)} | {ci_str} | {_fmt_num(r.p_value, 6)} | {_fmt_num(r.p_adjusted, 6)} | `{r.flagged}` |"
+                f"| `{rr.scope}` | `{rr.metric}` | {_fmt_pct(rr.baseline_value)} | {_fmt_pct(rr.candidate_value)} | "
+                f"{_fmt_num(rr.diff)} | {ci_str} | {_fmt_num(rr.p_value, 6)} | {_fmt_num(rr.p_adjusted, 6)} | `{rr.flagged}` |"
             )
 
     flagged_total = sum(1 for r in reg_rows if r.flagged)

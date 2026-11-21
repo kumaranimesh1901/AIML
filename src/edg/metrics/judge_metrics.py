@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -57,8 +58,8 @@ def compute_ordinal_agreement(
 
 
 def compute_binary_classification_metrics(
-    y_true: list[bool | None],
-    y_pred: list[bool | None],
+    y_true: Sequence[bool | None],
+    y_pred: Sequence[bool | None],
 ) -> dict[str, Any]:
     """Compute precision, recall, F1, and 2x2 confusion matrix, excluding None pairs."""
     paired = [
@@ -179,7 +180,7 @@ def compute_judge_reliability(
     mean_scores: list[float] = []
     for r in judgement_rows:
         scores = [
-            r.get(f"{dim}_score")
+            float(r[f"{dim}_score"])
             for dim in DIMENSIONS
             if r.get(f"{dim}_score") is not None
         ]

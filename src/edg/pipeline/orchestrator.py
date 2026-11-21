@@ -23,7 +23,7 @@ from edg.cleaning.pipeline import run_cleaning_pipeline
 from edg.clustering.pipeline import run_clustering_pipeline
 from edg.config import AppConfig
 from edg.db.models import Judgement
-from edg.db.repositories import track_run
+from edg.db.repositories import source_judgements_only, track_run
 from edg.db.session import get_session, init_db
 from edg.embeddings.embedder import compare_embedding_models, embed_interactions
 from edg.evaluation.regression import compare_models_on_release
@@ -179,7 +179,10 @@ def run_full_pipeline(
     ann_path = Path(annotations_dir)
     with get_session(engine) as session:
         exp = export_annotation_sheets(session, config, output_dir=ann_path)
-        jdgs_by_id = {j.interaction_id: j for j in session.scalars(select(Judgement)).all()}
+        jdgs_by_id = {
+            j.interaction_id: j
+            for j in session.scalars(select(Judgement).where(source_judgements_only())).all()
+        }
 
     dev_filled = _fill_simulated_calibration_csv(
         Path(exp["judge_dev_path"]), jdgs_by_id, annotator_id="sim_annotator_1", seed=config.seed

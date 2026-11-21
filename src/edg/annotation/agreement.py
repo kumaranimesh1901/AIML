@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from edg.db.models import HumanAnnotation, InteractionRaw, Judgement
+from edg.db.repositories import source_judgements_only
 from edg.judge.schema import DIMENSIONS
 from edg.logging import get_logger
 from edg.metrics.judge_metrics import (
@@ -105,7 +106,10 @@ def _pair_annotations_with_judgements(
     for ann in anns:
         primary_anns.setdefault(ann.interaction_id, ann)
 
-    j_stmt = select(Judgement).where(Judgement.interaction_id.in_(list(primary_anns.keys())))
+    j_stmt = select(Judgement).where(
+        Judgement.interaction_id.in_(list(primary_anns.keys())),
+        source_judgements_only(),
+    )
     if judge_version:
         j_stmt = j_stmt.where(Judgement.judge_version == judge_version)
     j_stmt = j_stmt.order_by(Judgement.created_at.desc())
@@ -178,6 +182,7 @@ def _evaluate_split(
         .where(
             InteractionRaw.source_tag == CONTROLLED_SOURCE_TAG,
             InteractionRaw.injected_failure.is_not(None),
+            source_judgements_only(),
         )
     ).all()
     controlled_recall = compute_controlled_tier_recall(
@@ -186,9 +191,9 @@ def _evaluate_split(
 
     # Judge reliability
     j_rows = session.execute(
-        select(Judgement, InteractionRaw.ai_response).join(
-            InteractionRaw, InteractionRaw.interaction_id == Judgement.interaction_id
-        )
+        select(Judgement, InteractionRaw.ai_response)
+        .join(InteractionRaw, InteractionRaw.interaction_id == Judgement.interaction_id)
+        .where(source_judgements_only())
     ).all()
     reliability_input = [
         {

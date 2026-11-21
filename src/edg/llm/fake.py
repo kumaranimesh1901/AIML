@@ -72,7 +72,7 @@ def _build_sample_dict(schema_model: type[BaseModel]) -> dict[str, Any]:
         if field_info.default is not None and not str(field_info.default).startswith("PydanticUndefined"):
             data[field_name] = field_info.default
         elif field_info.default_factory is not None:
-            data[field_name] = field_info.default_factory()
+            data[field_name] = field_info.get_default(call_default_factory=True)
         else:
             data[field_name] = _sample_value_for_annotation(field_info.annotation, field_info)
     return data

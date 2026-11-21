@@ -15,6 +15,7 @@ from db_helper import get_engine
 from sqlalchemy import select
 
 from edg.db.models import InteractionClean, InteractionRaw, Judgement, Label, StateSnapshot
+from edg.db.repositories import source_judgements_only
 from edg.db.session import get_session
 
 st.set_page_config(page_title="Interaction Explorer | EDG", layout="wide")
@@ -80,7 +81,9 @@ if not filtered.empty:
         snap_obj = session.get(StateSnapshot, raw_obj.snapshot_id) if raw_obj else None
         jdg_list = list(
             session.scalars(
-                select(Judgement).where(Judgement.interaction_id == selected_id)
+                select(Judgement).where(
+                    Judgement.interaction_id == selected_id, source_judgements_only()
+                )
             ).all()
         )
 

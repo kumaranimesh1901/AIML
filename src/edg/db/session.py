@@ -9,9 +9,10 @@ from typing import Any
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
-from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy import Connection, Engine, create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from edg.db.immutability import install_immutability_triggers
 from edg.db.models import Base
 
 
@@ -43,7 +44,7 @@ def create_db_engine(database_url: str, *, echo: bool = False) -> Engine:
 
 
 @contextmanager
-def get_session(engine: Engine) -> Iterator[Session]:
+def get_session(engine: Engine | Connection) -> Iterator[Session]:
     """Provide a transactional SQLAlchemy session scope."""
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     session = factory()
@@ -78,5 +79,7 @@ def init_db(database_url: str, *, use_alembic: bool = True, echo: bool = False) 
         command.upgrade(alembic_cfg, "head")
     else:
         Base.metadata.create_all(engine)
+        with engine.begin() as conn:
+            install_immutability_triggers(conn)
 
     return engine

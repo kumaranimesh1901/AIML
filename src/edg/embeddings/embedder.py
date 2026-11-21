@@ -13,6 +13,7 @@ from edg.config import AppConfig
 from edg.db.models import Embedding, InteractionClean, InteractionRaw
 from edg.embeddings.cache import EmbeddingCache, compute_text_hash
 from edg.logging import get_logger
+from edg.sut.failure_injector import CONTROLLED_SOURCE_TAG
 from edg.world.policies import hash_embed_texts
 
 logger = get_logger(__name__)
@@ -243,6 +244,8 @@ def compare_embedding_models(
             InteractionClean.valid.is_(True),
             InteractionClean.is_representative.is_(True),
             InteractionRaw.intent_label.is_not(None),
+            # Controlled-tier rewrites copy natural queries verbatim and would inflate recall@k
+            InteractionRaw.source_tag != CONTROLLED_SOURCE_TAG,
         )
         .order_by(InteractionClean.interaction_id)
     ).all()

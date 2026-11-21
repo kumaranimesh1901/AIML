@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from edg.config import AppConfig
 from edg.db.models import InteractionRaw, Judgement, Label, StateSnapshot
+from edg.db.repositories import source_judgements_only
 from edg.judge.schema import DIMENSIONS
 from edg.labeling.review_queue import evaluate_review_need
 from edg.labeling.severity import resolve_severity_for_interaction
@@ -78,7 +79,10 @@ def run_labeling_pipeline(
         )
         .join(InteractionRaw, InteractionRaw.interaction_id == Judgement.interaction_id)
         .join(StateSnapshot, StateSnapshot.snapshot_id == InteractionRaw.snapshot_id)
-        .where(Judgement.judgement_id.notin_(already_labeled_jids))
+        .where(
+            Judgement.judgement_id.notin_(already_labeled_jids),
+            source_judgements_only(),
+        )
         .order_by(Judgement.judgement_id)
     ).all()
 
