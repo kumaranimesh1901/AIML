@@ -18,6 +18,82 @@ def _normalise_status(value: str) -> str:
     return re.sub(r"[\s\-]+", "_", value.strip().lower())
 
 
+# Every status code the store world can record (orders, payments, shipments, returns). A claimed
+# status outside this vocabulary ("being processed") cannot be checked, so it is not_in_evidence
+# rather than contradicted.
+KNOWN_STATUS_CODES = frozenset(
+    {
+        "placed", "shipped", "in_transit", "out_for_delivery", "delivered", "cancelled",
+        "returned", "refunded", "authorised", "captured", "failed", "requested", "approved",
+        "rejected_past_window",
+    }
+)
+
+_STATUS_SYNONYMS = {"canceled": "cancelled", "authorized": "authorised"}
+
+# "will be delivered", "expected to be delivered" etc. describe a future delivery, not a delivery
+_FUTURE_DELIVERY_RE = re.compile(
+    r"\b(?:will|should|would|to|expected\s+to|scheduled\s+to|going\s+to)\s+(?:be\s+)?(?:get\s+)?delivered\b"
+)
+
+_MONTHS = {
+    m: i
+    for i, names in enumerate(
+        [
+            ("jan", "january"), ("feb", "february"), ("mar", "march"), ("apr", "april"),
+            ("may",), ("jun", "june"), ("jul", "july"), ("aug", "august"),
+            ("sep", "sept", "september"), ("oct", "october"), ("nov", "november"), ("dec", "december"),
+        ],
+        start=1,
+    )
+    for m in names
+}
+_ISO_DATE_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})")
+_US_DATE_RE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
+_MONTH_FIRST_RE = re.compile(r"\b([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b")
+_DAY_FIRST_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]{3,9})\.?(?:,?\s+(\d{4}))?\b")
+
+# Words that make an amount a claim about a recorded order amount (total, charge, price)
+_RECORDED_AMOUNT_RE = re.compile(r"\b(?:total|charged?|paid|billed|payment|price|cost of (?:your|the) order)\b")
+_REFUND_AMOUNT_RE = re.compile(r"\brefund", re.IGNORECASE)
+_NUMBER_RE = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
+
+
+def _normalise_date(value: str) -> tuple[int | None, int, int] | None:
+    """Parse a claimed date into (year or None, month, day); None if it is not a calendar date."""
+    low = value.strip().lower()
+    if m := _ISO_DATE_RE.search(low):
+        return int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if m := _US_DATE_RE.search(low):
+        return int(m.group(3)), int(m.group(1)), int(m.group(2))
+    if (m := _MONTH_FIRST_RE.search(low)) and m.group(1) in _MONTHS:
+        return (int(m.group(3)) if m.group(3) else None), _MONTHS[m.group(1)], int(m.group(2))
+    if (m := _DAY_FIRST_RE.search(low)) and m.group(2) in _MONTHS:
+        return (int(m.group(3)) if m.group(3) else None), _MONTHS[m.group(2)], int(m.group(1))
+    return None
+
+
+def _date_matches(value: str, valid_dates: set[str]) -> bool:
+    parsed = _normalise_date(value)
+    if parsed is None:
+        return False
+    year, month, day = parsed
+    for d in valid_dates:
+        vy, vm, vd = (int(x) for x in d.split("-"))
+        if vm == month and vd == day and (year is None or year == vy):
+            return True
+    return False
+
+
+def _policy_numbers(policy_chunks: list[dict[str, Any]] | None) -> set[float]:
+    nums: set[float] = set()
+    for chunk in policy_chunks or []:
+        text = " ".join(str(v) for v in chunk.values() if isinstance(v, str))
+        for m in _NUMBER_RE.finditer(text):
+            nums.add(float(m.group(0).replace(",", "")))
+    return nums
+
+
 def _collect_snapshot_dates(snapshot_json: dict[str, Any]) -> set[str]:
     dates: set[str] = set()
     order = snapshot_json.get("order") or {}
@@ -86,9 +162,20 @@ def verify_claims(
     has_actual_delivery = any(s.get("actual_delivery") is not None for s in shipments)
     has_disputed_delivery = any(bool(s.get("customer_disputed")) for s in shipments)
     has_past_window_return = any(r.get("status") == "rejected_past_window" for r in returns)
-    all_statuses = {order_status} | {
-        str(s.get("carrier_scan_status", "")).lower() for s in shipments
-    } | {str(r.get("status", "")).lower() for r in returns}
+    payments = snapshot_json.get("payments") or []
+    all_statuses = (
+        {order_status}
+        | {str(s.get("carrier_scan_status", "")).lower() for s in shipments}
+        | {str(r.get("status", "")).lower() for r in returns}
+        | {str(p.get("status", "")).lower() for p in payments}
+    )
+    order_amounts = [float(order["total_amount"])] if order.get("total_amount") is not None else []
+    order_amounts += [float(p["amount"]) for p in payments if p.get("amount") is not None]
+    order_amounts += [
+        float(it["unit_price"]) for it in snapshot_json.get("items") or [] if it.get("unit_price") is not None
+    ]
+    refund_amounts = [float(r["refund_amount"]) for r in returns if r.get("refund_amount") is not None]
+    policy_numbers = _policy_numbers(policy_chunks)
 
     results: list[ClaimCheckResult] = []
     for claim in claims:
@@ -98,6 +185,8 @@ def verify_claims(
 
         if claim.claim_type == "status":
             norm_val = _normalise_status(val_low)
+            norm_val = _STATUS_SYNONYMS.get(norm_val, norm_val)
+            future_delivery = _FUTURE_DELIVERY_RE.search(f"{val_low} {text_low}") is not None
             negated_delivery = _NEGATED_DELIVERY_RE.search(f"{val_low} {text_low}") is not None
             if negated_delivery:
                 # "not delivered yet" is a claim of NON-delivery, not of delivery
@@ -110,6 +199,20 @@ def verify_claims(
                             "Response claims not delivered, but a shipment has actual_delivery set."
                             if has_actual_delivery
                             else "No shipment has actual_delivery set, consistent with not delivered."
+                        ),
+                    )
+                )
+            elif future_delivery:
+                # An expected delivery is only wrong if the parcel has already arrived
+                results.append(
+                    ClaimCheckResult(
+                        claim_text=claim.claim_text,
+                        claim_type=claim.claim_type,
+                        status="contradicted" if has_actual_delivery else "not_in_evidence",
+                        evidence_detail=(
+                            "Response describes a future delivery, but a shipment has actual_delivery set."
+                            if has_actual_delivery
+                            else "Future delivery claim; no actual_delivery recorded yet."
                         ),
                     )
                 )
@@ -141,13 +244,22 @@ def verify_claims(
                             evidence_detail="Snapshot contains a shipment with actual_delivery set.",
                         )
                     )
-            elif val_low:
+            elif norm_val in KNOWN_STATUS_CODES:
                 results.append(
                     ClaimCheckResult(
                         claim_text=claim.claim_text,
                         claim_type=claim.claim_type,
                         status="contradicted",
                         evidence_detail=f"Claimed status '{norm_val}' contradicts snapshot statuses {sorted(all_statuses)}.",
+                    )
+                )
+            elif val_low:
+                results.append(
+                    ClaimCheckResult(
+                        claim_text=claim.claim_text,
+                        claim_type=claim.claim_type,
+                        status="not_in_evidence",
+                        evidence_detail=f"Claimed status '{val}' is not a recorded status code.",
                     )
                 )
             else:
@@ -180,7 +292,7 @@ def verify_claims(
                             evidence_detail="Relative date 'yesterday' not directly verified.",
                         )
                     )
-            elif val in valid_dates:
+            elif val in valid_dates or _date_matches(val or claim.claim_text, valid_dates):
                 results.append(
                     ClaimCheckResult(
                         claim_text=claim.claim_text,
@@ -200,9 +312,8 @@ def verify_claims(
                 )
 
         elif claim.claim_type == "amount":
-            try:
-                num = float(val.replace("$", "").replace(",", ""))
-            except ValueError:
+            num_match = _NUMBER_RE.search(val.replace("$", "")) or _NUMBER_RE.search(claim.claim_text)
+            if num_match is None:
                 results.append(
                     ClaimCheckResult(
                         claim_text=claim.claim_text,
@@ -212,34 +323,34 @@ def verify_claims(
                     )
                 )
                 continue
+            num = float(num_match.group(0).replace(",", ""))
+
+            def _amount(status: str, detail: str, c: ExtractedClaim = claim) -> ClaimCheckResult:
+                return ClaimCheckResult(
+                    claim_text=c.claim_text,
+                    claim_type=c.claim_type,
+                    status=status,  # type: ignore[arg-type]
+                    evidence_detail=detail,
+                )
 
             if any(abs(num - a) <= 0.01 for a in valid_amounts):
+                results.append(_amount("supported", f"Amount ${num:.2f} matches snapshot."))
+            elif "voucher" in text_low:
+                results.append(_amount("not_in_evidence", f"Voucher amount ${num:.2f} is not in snapshot or policy."))
+            elif _REFUND_AMOUNT_RE.search(text_low) and refund_amounts:
                 results.append(
-                    ClaimCheckResult(
-                        claim_text=claim.claim_text,
-                        claim_type=claim.claim_type,
-                        status="supported",
-                        evidence_detail=f"Amount ${num:.2f} matches snapshot.",
-                    )
+                    _amount("contradicted", f"Refund amount ${num:.2f} contradicts recorded refunds {refund_amounts}.")
                 )
-            elif num in (50.0, 200.0) and "voucher" not in text_low:
-                # Policy threshold amounts ($50 free shipping, $200 escalation)
+            elif _RECORDED_AMOUNT_RE.search(text_low) and not _REFUND_AMOUNT_RE.search(text_low) and order_amounts:
                 results.append(
-                    ClaimCheckResult(
-                        claim_text=claim.claim_text,
-                        claim_type=claim.claim_type,
-                        status="supported",
-                        evidence_detail=f"Amount ${num:.2f} matches store policy threshold.",
-                    )
+                    _amount("contradicted", f"Amount ${num:.2f} contradicts recorded order amounts {order_amounts}.")
                 )
+            elif num in (50.0, 200.0) or num in policy_numbers:
+                # Policy figures: thresholds, fees, return windows
+                results.append(_amount("supported", f"Amount {num:g} matches a store policy figure."))
             else:
                 results.append(
-                    ClaimCheckResult(
-                        claim_text=claim.claim_text,
-                        claim_type=claim.claim_type,
-                        status="contradicted",
-                        evidence_detail=f"Amount ${num:.2f} contradicts snapshot amounts {valid_amounts}.",
-                    )
+                    _amount("not_in_evidence", f"Amount ${num:.2f} is not recorded in the snapshot or policies.")
                 )
 
         elif claim.claim_type == "eligibility":

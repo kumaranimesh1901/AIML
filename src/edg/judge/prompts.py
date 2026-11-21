@@ -43,6 +43,11 @@ def build_judge_system_prompt(rubric: dict[str, Any], taxonomy: TaxonomyConfig |
         "If evidence_status is 'missing', correctness MUST be 'not_assessable' with score null.\n"
         "Dimensions to score (verdict in [pass, partial, fail, not_assessable] and score 1-5):\n"
         + "\n".join(dims_text)
+        + "\nEvery dimension needs an integer score from 1 to 5 that fits its verdict; use score null "
+        "only when the verdict is not_assessable.\n"
+        "Deterministic claim check statuses: supported = matches the snapshot or policies; "
+        "contradicted = conflicts with them; not_in_evidence = the records neither confirm nor "
+        "contradict it."
         + "\nfailure_types: list every failure that applies, using ONLY these exact names "
         "(empty list if none):\n"
         + "\n".join(ft_text)

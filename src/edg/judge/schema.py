@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 EvidenceStatus = Literal["sufficient", "partial", "missing"]
 DimensionVerdict = Literal["pass", "partial", "fail", "not_assessable"]
@@ -48,7 +48,17 @@ class DimensionAssessment(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     verdict: DimensionVerdict
-    score: int | None = Field(default=None, ge=1, le=5)
+    # Required (no default) so schema-constrained providers always emit it; null only for
+    # not_assessable. A defaulted score let the live judge drop scores on most items.
+    score: int | None = Field(ge=1, le=5)
+
+    @model_validator(mode="after")
+    def _score_matches_verdict(self) -> DimensionAssessment:
+        if self.verdict == "not_assessable":
+            self.score = None
+        elif self.score is None:
+            raise ValueError(f"verdict '{self.verdict}' needs an integer score from 1 to 5")
+        return self
 
 
 class LLMJudgeOutput(BaseModel):

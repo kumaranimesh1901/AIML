@@ -66,7 +66,10 @@ def extract_claims_deterministic(response_text: str) -> list[ExtractedClaim]:
         _add("date", "delivered yesterday", "yesterday")
 
     for m in _AMOUNT_RE.finditer(response_text):
-        _add("amount", f"amount ${m.group(1)}", m.group(1))
+        # Keep the few words before the amount ("a total of", "refund of") so the verifier can
+        # tell a claimed order total or refund from a policy figure.
+        lead = " ".join(response_text[: m.start()].split()[-4:])
+        _add("amount", f"{lead} ${m.group(1)}".strip(), m.group(1))
 
     for m in _FAKE_TRACKING_RE.finditer(response_text):
         _add("action_taken", f"tracking number {m.group(1)}", m.group(1))
