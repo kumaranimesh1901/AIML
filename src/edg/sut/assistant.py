@@ -28,6 +28,29 @@ Respond with ONLY valid JSON in one of two formats:
 """
 
 
+# Constrains providers with schema-guided decoding (Ollama `format`) to the two valid reply shapes
+SUT_ACTION_JSON_SCHEMA: dict[str, Any] = {
+    "anyOf": [
+        {
+            "type": "object",
+            "properties": {
+                "action": {"const": "tool_call"},
+                "tool": {
+                    "enum": ["get_order", "get_shipment", "get_payments", "get_returns", "search_policy"]
+                },
+                "arguments": {"type": "object"},
+            },
+            "required": ["action", "tool", "arguments"],
+        },
+        {
+            "type": "object",
+            "properties": {"action": {"const": "final_answer"}, "answer": {"type": "string"}},
+            "required": ["action", "answer"],
+        },
+    ]
+}
+
+
 class AssistantResult(BaseModel):
     answer: str
     model_version: str
@@ -221,6 +244,7 @@ class CustomerSupportAssistant:
                     model=self.version_config.base_model,
                     temperature=self.version_config.temperature,
                     json_mode=True,
+                    json_schema=SUT_ACTION_JSON_SCHEMA,
                 )
             except LLMError as exc:
                 error_msg = str(exc)

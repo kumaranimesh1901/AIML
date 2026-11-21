@@ -39,6 +39,8 @@ class LLMRequest(BaseModel):
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1)
     json_mode: bool = False
+    # Optional JSON Schema for providers that can constrain decoding to it (Ollama `format`)
+    json_schema: dict[str, Any] | None = None
 
 
 class LLMResponse(BaseModel):
@@ -125,6 +127,7 @@ class BaseLLMClient(ABC):
         json_mode: bool = False,
         schema_name: str | None = None,
         bypass_cache: bool = False,
+        json_schema: dict[str, Any] | None = None,
     ) -> LLMResponse:
         """Generate text with caching and exponential backoff retries."""
         resolved_model = model or self.default_model
@@ -156,6 +159,7 @@ class BaseLLMClient(ABC):
             temperature=temperature,
             max_tokens=max_tokens,
             json_mode=json_mode,
+            json_schema=json_schema,
         )
 
         last_exc: Exception | None = None
@@ -222,13 +226,21 @@ class BaseLLMClient(ABC):
         """Generate and validate a Pydantic-structured JSON response, retrying on parse errors."""
         retries = self.max_retries if max_validation_retries is None else max_validation_retries
         schema_name = schema_model.__name__
+        json_schema = schema_model.model_json_schema()
+        # Show the exact target shape: small local models cannot infer it from a class name, and
+        # providers without schema-constrained decoding only see the prompt.
+        base_prompt = (
+            f"{prompt}\n\nRespond with ONLY a JSON object that conforms to this JSON Schema:\n"
+            f"{json.dumps(json_schema, sort_keys=True)}"
+        )
+        attempt_prompt = base_prompt
         last_error: Exception | None = None
         last_response: LLMResponse | None = None
 
         for attempt in range(retries + 1):
             effective_bypass = bypass_cache or (attempt > 0)
             response = self.generate(
-                prompt=prompt,
+                prompt=attempt_prompt,
                 system_prompt=system_prompt,
                 model=model,
                 temperature=temperature,
@@ -236,6 +248,7 @@ class BaseLLMClient(ABC):
                 json_mode=True,
                 schema_name=schema_name,
                 bypass_cache=effective_bypass,
+                json_schema=json_schema,
             )
             last_response = response
             try:
@@ -245,6 +258,13 @@ class BaseLLMClient(ABC):
                 return parsed, response
             except (json.JSONDecodeError, ValidationError) as exc:
                 last_error = exc
+                # Corrective retry: re-sending the identical prompt reproduces the identical invalid
+                # output at temperature 0, so tell the model what was wrong.
+                attempt_prompt = (
+                    f"{base_prompt}\n\nYour previous reply was invalid:\n{response.text[:1000]}\n"
+                    f"Validation error: {str(exc)[:600]}\n"
+                    "Reply again with ONLY a corrected JSON object that conforms to the schema above."
+                )
                 logger.warning(
                     "llm_json_validation_retry",
                     extra={
@@ -305,7 +325,8 @@ class OllamaClient(BaseLLMClient):
         if request.max_tokens is not None:
             payload["options"]["num_predict"] = request.max_tokens
         if request.json_mode:
-            payload["format"] = "json"
+            # Ollama structured outputs: a JSON Schema constrains decoding to that exact shape
+            payload["format"] = request.json_schema if request.json_schema else "json"
 
         with httpx.Client(timeout=self.timeout_seconds) as client:
             resp = client.post(f"{self.base_url}/api/chat", json=payload)
