@@ -61,6 +61,16 @@ class DimensionAssessment(BaseModel):
         return self
 
 
+class LLMDimensionAssessment(DimensionAssessment):
+    """Dimension shape sent to the judge LLM: the score is always an integer.
+
+    Allowing null in the provider schema let constrained decoding pick it for fail/partial
+    verdicts; for not_assessable the inherited validator drops the score.
+    """
+
+    score: int = Field(ge=1, le=5)  # type: ignore[assignment]
+
+
 class LLMJudgeOutput(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

@@ -127,3 +127,51 @@ def test_judge_json_schema_requires_dimension_scores() -> None:
     schema = LLMJudgeOutput.model_json_schema()
     dim = schema["$defs"]["DimensionAssessment"]
     assert set(dim["required"]) == {"verdict", "score"}
+
+
+# ---------------------------------------------------------------------------
+# Third real run (j1.2): llama3.1:8b kept sending {"verdict": "fail", "score": null} even after
+# corrective retries, so judgements ended as judge_error. The schema sent to Ollama allowed null,
+# and constrained decoding let the model pick it. The LLM-facing schema now only allows an
+# integer score; for not_assessable the code drops whatever score was sent.
+# ---------------------------------------------------------------------------
+
+
+def _judge_schema() -> dict:
+    from edg.config import load_config
+    from edg.judge.llm_judge import HybridJudge
+    from edg.llm.fake import FakeLLMClient
+
+    cfg = load_config(small=True, overrides={"llm": {"provider": "fake"}})
+    return HybridJudge(config=cfg, llm_client=FakeLLMClient()).output_schema  # type: ignore[return-value]
+
+
+def test_llm_facing_judge_schema_forbids_null_scores() -> None:
+    model = _judge_schema()
+    schema = model.model_json_schema()  # type: ignore[attr-defined]
+    dims = [d for name, d in schema["$defs"].items() if "Dimension" in name]
+    assert dims
+    for dim in dims:
+        score = dim["properties"]["score"]
+        assert score.get("type") == "integer", score
+        assert "anyOf" not in score
+        assert "score" in dim["required"]
+
+
+def test_llm_facing_judge_schema_drops_score_for_not_assessable() -> None:
+    model = _judge_schema()
+    payload = {
+        "correctness": {"verdict": "not_assessable", "score": 3},
+        "relevance": {"verdict": "fail", "score": 1},
+        "helpfulness": {"verdict": "partial", "score": 3},
+        "completeness": {"verdict": "fail", "score": 2},
+        "safety": {"verdict": "pass", "score": 5},
+        "failure_types": [],
+        "explanation": "Off-topic reply.",
+        "confidence": 0.8,
+    }
+    out = model.model_validate(payload)  # type: ignore[attr-defined]
+    assert out.correctness.score is None
+    assert out.relevance.score == 1
+    with pytest.raises(ValidationError):
+        model.model_validate({**payload, "relevance": {"verdict": "fail", "score": None}})  # type: ignore[attr-defined]

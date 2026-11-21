@@ -30,8 +30,10 @@ from edg.judge.prompts import (
     load_judge_rubric,
 )
 from edg.judge.schema import (
+    DIMENSIONS,
     ClaimCheckResult,
     DimensionAssessment,
+    LLMDimensionAssessment,
     LLMJudgeOutput,
 )
 from edg.judge.verifier import verify_claims
@@ -243,6 +245,7 @@ class HybridJudge:
             "LLMJudgeOutput",
             __base__=LLMJudgeOutput,
             failure_types=(list[failure_type_literal], Field(default_factory=list)),  # type: ignore[valid-type]
+            **{dim: (LLMDimensionAssessment, ...) for dim in DIMENSIONS},  # type: ignore[call-overload]
         )
         self.prompt_hash = compute_prompt_hash(self.system_prompt, self.rubric)
         self.judge_version = config.judge.judge_version
