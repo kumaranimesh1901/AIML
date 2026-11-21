@@ -12,6 +12,7 @@ import yaml
 from edg.config import _find_project_root
 from edg.judge.evidence import EvidenceBundle
 from edg.judge.schema import ClaimCheckResult
+from edg.world.taxonomy import TaxonomyConfig, load_taxonomy
 
 
 def load_judge_rubric(path: str | Path | None = None) -> dict[str, Any]:
@@ -23,11 +24,18 @@ def load_judge_rubric(path: str | Path | None = None) -> dict[str, Any]:
         return yaml.safe_load(fh) or {}
 
 
-def build_judge_system_prompt(rubric: dict[str, Any]) -> str:
-    """Build the system prompt embedding rubric dimensions and strict evidence rules."""
+def build_judge_system_prompt(rubric: dict[str, Any], taxonomy: TaxonomyConfig | None = None) -> str:
+    """Build the system prompt embedding rubric dimensions, failure taxonomy, and evidence rules."""
+    tax = taxonomy or load_taxonomy()
     dims_text = []
     for dim_name, dim_def in (rubric.get("dimensions") or {}).items():
         dims_text.append(f"- {dim_name}: {dim_def.get('description', '')}")
+    # The judge must label failures with the exact taxonomy names: severity, labeling, and
+    # controlled-tier recall all match on these names.
+    ft_text = [
+        f"- {name}: {ft.description} Decision rule: {ft.decision_rule}"
+        for name, ft in tax.failure_types.items()
+    ]
     return (
         "You are an impartial, evidence-based evaluation judge for NovaMart customer-support replies.\n"
         "NEVER guess truth. Base correctness strictly on the provided state snapshot, policy chunks, "
@@ -35,6 +43,9 @@ def build_judge_system_prompt(rubric: dict[str, Any]) -> str:
         "If evidence_status is 'missing', correctness MUST be 'not_assessable' with score null.\n"
         "Dimensions to score (verdict in [pass, partial, fail, not_assessable] and score 1-5):\n"
         + "\n".join(dims_text)
+        + "\nfailure_types: list every failure that applies, using ONLY these exact names "
+        "(empty list if none):\n"
+        + "\n".join(ft_text)
         + "\nReturn ONLY valid JSON matching LLMJudgeOutput."
     )
 

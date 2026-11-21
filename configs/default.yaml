@@ -97,7 +97,7 @@ priority:
 judge:
   provider: "ollama"
   model_name: "llama3.1:8b"
-  judge_version: "j1.0"
+  judge_version: "j1.1"  # j1.1: judge prompt now lists taxonomy failure types
   temperature: 0.0
   max_retries: 3
   top_k_policies: 3

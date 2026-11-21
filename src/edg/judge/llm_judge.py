@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
+from pydantic import Field, create_model
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -37,6 +38,7 @@ from edg.llm.cache import LLMCache
 from edg.llm.client import BaseLLMClient, LLMError, create_llm_client
 from edg.logging import get_logger
 from edg.sut.failure_injector import CONTROLLED_SOURCE_TAG
+from edg.world.taxonomy import load_taxonomy
 
 logger = get_logger(__name__)
 
@@ -219,7 +221,16 @@ class HybridJudge:
         self.config = config
         self.llm_client = llm_client
         self.rubric = rubric or load_judge_rubric()
-        self.system_prompt = build_judge_system_prompt(self.rubric)
+        taxonomy = load_taxonomy()
+        self.system_prompt = build_judge_system_prompt(self.rubric, taxonomy)
+        # Same shape as LLMJudgeOutput, but failure_types restricted to the taxonomy names so
+        # schema-constrained providers (Ollama) can only emit valid labels.
+        failure_type_literal = Literal[tuple(sorted(taxonomy.failure_types))]  # type: ignore[valid-type]
+        self.output_schema: type[LLMJudgeOutput] = create_model(
+            "LLMJudgeOutput",
+            __base__=LLMJudgeOutput,
+            failure_types=(list[failure_type_literal], Field(default_factory=list)),  # type: ignore[valid-type]
+        )
         self.prompt_hash = compute_prompt_hash(self.system_prompt, self.rubric)
         self.judge_version = config.judge.judge_version
         self.judge_model = config.judge.model_name
@@ -296,7 +307,7 @@ class HybridJudge:
             try:
                 parsed_output, llm_resp = self.llm_client.generate_json(
                     prompt=user_prompt,
-                    schema_model=LLMJudgeOutput,
+                    schema_model=self.output_schema,
                     system_prompt=self.system_prompt,
                     model=self.judge_model,
                     temperature=self.config.judge.temperature,

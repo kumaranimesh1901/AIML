@@ -1,5 +1,5 @@
 # Evidence-Based Hybrid LLM Judge Rubric (v1.0)
-version: "j1.0"
+version: "j1.1"
 
 verdicts:
   - pass

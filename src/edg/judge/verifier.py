@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from edg.judge.schema import ClaimCheckResult, ExtractedClaim
+
+_NEGATED_DELIVERY_RE = re.compile(
+    r"\b(?:not(?:\s+yet)?\s+(?:been\s+)?delivered|undelivered|never\s+(?:been\s+)?delivered|"
+    r"(?:hasn't|hasn’t|has not|have not|haven't|wasn't|was not|isn't|is not)\s+(?:yet\s+)?(?:been\s+)?delivered)\b"
+)
+
+
+def _normalise_status(value: str) -> str:
+    """Map free-text status values ("In transit", "out-for-delivery") onto snapshot codes."""
+    return re.sub(r"[\s\-]+", "_", value.strip().lower())
 
 
 def _collect_snapshot_dates(snapshot_json: dict[str, Any]) -> set[str]:
@@ -86,7 +97,32 @@ def verify_claims(
         text_low = claim.claim_text.lower()
 
         if claim.claim_type == "status":
-            if "delivered" in val_low or "delivered" in text_low:
+            norm_val = _normalise_status(val_low)
+            negated_delivery = _NEGATED_DELIVERY_RE.search(f"{val_low} {text_low}") is not None
+            if negated_delivery:
+                # "not delivered yet" is a claim of NON-delivery, not of delivery
+                results.append(
+                    ClaimCheckResult(
+                        claim_text=claim.claim_text,
+                        claim_type=claim.claim_type,
+                        status="contradicted" if has_actual_delivery else "supported",
+                        evidence_detail=(
+                            "Response claims not delivered, but a shipment has actual_delivery set."
+                            if has_actual_delivery
+                            else "No shipment has actual_delivery set, consistent with not delivered."
+                        ),
+                    )
+                )
+            elif norm_val in all_statuses and norm_val != "delivered":
+                results.append(
+                    ClaimCheckResult(
+                        claim_text=claim.claim_text,
+                        claim_type=claim.claim_type,
+                        status="supported",
+                        evidence_detail=f"Status '{norm_val}' matches snapshot records.",
+                    )
+                )
+            elif "delivered" in val_low or "delivered" in text_low:
                 if not has_actual_delivery:
                     results.append(
                         ClaimCheckResult(
@@ -105,22 +141,13 @@ def verify_claims(
                             evidence_detail="Snapshot contains a shipment with actual_delivery set.",
                         )
                     )
-            elif val_low and val_low in all_statuses:
-                results.append(
-                    ClaimCheckResult(
-                        claim_text=claim.claim_text,
-                        claim_type=claim.claim_type,
-                        status="supported",
-                        evidence_detail=f"Status '{val_low}' matches snapshot records.",
-                    )
-                )
             elif val_low:
                 results.append(
                     ClaimCheckResult(
                         claim_text=claim.claim_text,
                         claim_type=claim.claim_type,
                         status="contradicted",
-                        evidence_detail=f"Claimed status '{val_low}' contradicts snapshot statuses {sorted(all_statuses)}.",
+                        evidence_detail=f"Claimed status '{norm_val}' contradicts snapshot statuses {sorted(all_statuses)}.",
                     )
                 )
             else:
