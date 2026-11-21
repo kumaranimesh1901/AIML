@@ -87,17 +87,23 @@ def generate_synthetic_catalogue(size: int, seed: int = 42) -> list[ProductRecor
     return products
 
 
+_AMAZON_META_ELECTRONICS_JSONL = (
+    "hf://datasets/McAuley-Lab/Amazon-Reviews-2023/raw/meta_categories/meta_Electronics.jsonl"
+)
+
+
 def _try_load_amazon_reviews_2023(size: int, seed: int) -> list[ProductRecord]:
     """Attempt streaming load from Hugging Face McAuley-Lab/Amazon-Reviews-2023 metadata."""
     from datasets import load_dataset
 
     rng = random.Random(seed)
+    # The dataset is script-based; `datasets>=4` no longer executes dataset scripts, so stream the
+    # raw metadata JSONL directly with the generic json builder (same rows, same fields).
     stream = load_dataset(
-        "McAuley-Lab/Amazon-Reviews-2023",
-        "raw_meta_Electronics",
-        split="full",
+        "json",
+        data_files=_AMAZON_META_ELECTRONICS_JSONL,
+        split="train",
         streaming=True,
-        trust_remote_code=False,
     )
     records: list[ProductRecord] = []
     for raw in stream:

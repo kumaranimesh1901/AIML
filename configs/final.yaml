@@ -1,0 +1,123 @@
+# Final evaluation profile: real public data + local Ollama, sized for confident statistics.
+# Methodology, thresholds, weights, and models are identical to default.yaml; only data sizes,
+# the output database, and the LLM timeout differ.
+#   - ~2,000 natural queries (1,500 real Bitext + 500 hard-state) + ~10% controlled tier
+#   - 1,200 orders -> ~48-60 snapshots per hard-state category (rates unchanged)
+#   - 900-item weighted judge sample, 150 judge_dev / 250 judge_test calibration items
+# Run with: edg run-all --config configs/final.yaml --hf --st --spacy
+profile: final
+seed: 42
+
+database:
+  url: "sqlite:///data/edg_final.db"
+  echo: false
+
+logging:
+  level: "INFO"
+  format: "json"
+
+llm:
+  provider: "ollama"  # ollama | openai_compatible | fake
+  ollama_base_url: "http://localhost:11434"
+  openai_base_url: "http://localhost:8000/v1"
+  openai_api_key: ""
+  timeout_seconds: 300.0  # long judge prompts on a laptop GPU
+  max_retries: 3
+  retry_base_delay_seconds: 1.0
+  retry_backoff_factor: 2.0
+  cache_enabled: true
+
+world:
+  policy_version: "v1"
+  catalogue_size: 1000
+  n_customers: 800
+  n_orders: 1200
+  hard_state_rates:
+    delivered_disputed: 0.05
+    duplicate_charge: 0.04
+    past_return_window: 0.05
+    boundary_return_window: 0.04
+    partial_shipment: 0.05
+    cancel_after_shipping: 0.05
+    refund_approved_not_issued: 0.05
+    wrong_item_delivered: 0.04
+
+queries:
+  bitext_sample_size: 1500
+  hard_query_count: 500
+  hard_query_generator_model: "qwen2.5:3b"
+
+sut:
+  max_tool_calls: 4
+  failure_injection_rate: 0.10
+  versions:
+    v1:
+      name: "v1"
+      provider: "ollama"
+      base_model: "qwen2.5:1.5b"
+      retrieval_enabled: false
+      temperature: 0.2
+      system_prompt: "You are a customer support assistant for NovaMart. Answer the customer's question concisely in 2 to 6 sentences using the available tools."
+    v2:
+      name: "v2"
+      provider: "ollama"
+      base_model: "qwen2.5:7b"
+      retrieval_enabled: true
+      temperature: 0.1
+      system_prompt: "You are a careful customer support assistant for NovaMart. Always verify order, payment, shipment, return, and store policy details using the tools before answering. Never guess dates, amounts, or policy rules. Answer clearly in 2 to 6 sentences."
+
+cleaning:
+  near_dup_cosine_threshold: 0.95
+
+embeddings:
+  model_name: "all-MiniLM-L6-v2"
+  alternative_model_name: "BAAI/bge-small-en-v1.5"
+  dimension: 384
+  batch_size: 64
+
+clustering:
+  umap_n_components: 10
+  umap_n_neighbors: 30
+  umap_min_dist: 0.0
+  umap_metric: "cosine"
+  umap2d_min_dist: 0.1
+  hdbscan_min_cluster_sizes: [15, 30, 50, 100]
+  hdbscan_min_samples: [5, 10]
+  max_noise_share: 0.35
+  stability_seeds: [42, 101, 202]
+  intent_purity_threshold: 0.50
+
+priority:
+  weights:
+    novelty: 0.20
+    small_cluster: 0.15
+    multi_intent: 0.15
+    state_conflict: 0.20
+    policy_boundary: 0.15
+    response_drift: 0.15
+  judge_sample_size: 900
+  random_control_share: 0.20
+  stratified_share: 0.40
+  priority_share: 0.40
+
+judge:
+  provider: "ollama"
+  model_name: "llama3.1:8b"
+  judge_version: "j1.0"
+  temperature: 0.0
+  max_retries: 3
+  top_k_policies: 3
+  low_confidence_threshold: 0.70
+  dev_annotation_size: 150
+  test_annotation_size: 250
+
+testcases:
+  dedupe_cosine_threshold: 0.92
+  silver_confidence_threshold: 0.85
+
+evaluation:
+  checklist_pass_threshold: 0.80
+  bootstrap_resamples: 2000
+  min_category_size: 30
+  alpha: 0.05
+  flip_rate_sample_share: 0.05
