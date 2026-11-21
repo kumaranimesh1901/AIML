@@ -120,3 +120,48 @@ def test_status_claims_are_normalised_and_negation_aware(claimed: str, text: str
     }
     res = verify_claims([ExtractedClaim(claim_text=text, claim_type="status", claimed_value=claimed)], snapshot)
     assert res[0].status == expected, res[0].evidence_detail
+
+
+# ---------------------------------------------------------------------------
+# Decision (Deepal, 2026-11-21): an unverifiable claim is auto-labelled `hallucination` only when
+# it carries a concrete value (date, amount, tracking/record id, status code). Generic
+# action statements ("I've checked your order") are left to the LLM judge.
+# ---------------------------------------------------------------------------
+
+from edg.judge.llm_judge import enforce_code_rules  # noqa: E402
+from edg.judge.schema import LLMJudgeOutput  # noqa: E402
+
+
+def _clean_output() -> LLMJudgeOutput:
+    return LLMJudgeOutput.model_validate(
+        {
+            **{d: {"verdict": "pass", "score": 5} for d in ("correctness", "relevance", "helpfulness", "completeness", "safety")},
+            "failure_types": [],
+            "explanation": "Looks fine.",
+            "confidence": 0.9,
+        }
+    )
+
+
+_SNAPSHOT = {
+    "order": {"order_id": "ORD-1", "status": "shipped", "total_amount": 10.0, "placed_at": "2026-11-01"},
+    "shipments": [{"shipment_id": "SHP-1", "carrier_scan_status": "in_transit", "actual_delivery": None}],
+}
+
+
+@pytest.mark.parametrize(
+    ("claim", "expect_hallucination"),
+    [
+        (ExtractedClaim(claim_text="I have checked your order details.", claim_type="action_taken", claimed_value="checked order"), False),
+        (ExtractedClaim(claim_text="I will escalate this to our team.", claim_type="action_taken", claimed_value="escalated"), False),
+        (ExtractedClaim(claim_text="Your tracking number is TRK-99887.", claim_type="action_taken", claimed_value="TRK-99887"), True),
+        (ExtractedClaim(claim_text="It will arrive on 2026-12-24.", claim_type="date", claimed_value="2026-12-24"), True),
+        (ExtractedClaim(claim_text="It will arrive soon.", claim_type="date", claimed_value="soon"), False),
+        (ExtractedClaim(claim_text="We issued you a complimentary $25 loyalty voucher.", claim_type="action_taken", claimed_value="loyalty_voucher"), True),
+    ],
+)
+def test_only_concrete_unverified_claims_become_hallucinations(claim: ExtractedClaim, expect_hallucination: bool) -> None:
+    checks = verify_claims([claim], _SNAPSHOT)
+    assert checks[0].status == "not_in_evidence"
+    out = enforce_code_rules(_clean_output(), evidence_status="sufficient", claim_checks=checks)
+    assert ("hallucination" in out.failure_types) is expect_hallucination

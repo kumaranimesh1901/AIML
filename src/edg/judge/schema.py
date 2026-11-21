@@ -41,6 +41,7 @@ class ClaimCheckResult(BaseModel):
     claim_type: ClaimType
     status: ClaimCheckStatus
     evidence_detail: str
+    claimed_value: str | None = None
 
 
 class DimensionAssessment(BaseModel):

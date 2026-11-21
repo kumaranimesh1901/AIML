@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from typing import Any, Literal
@@ -44,6 +45,26 @@ logger = get_logger(__name__)
 
 _HALLUCINATION_CLAIM_TYPES = {"action_taken", "amount", "date", "status"}
 
+# A claim is "concrete" when it names a specific checkable fact: an ISO or written date, a money
+# amount, or a record/tracking id. Only concrete unverified claims are auto-labelled hallucination
+# (taxonomy: "invents tracking numbers, dates, dollar amounts ..."); generic action statements
+# such as "I've checked your order" are left to the LLM judge.
+_CONCRETE_VALUE_RE = re.compile(
+    r"\d{4}-\d{2}-\d{2}"
+    r"|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b"
+    r"|\$\s?\d|\b\d+(?:\.\d{1,2})?\s?(?:usd|dollars)\b"
+    r"|\b(?:TRK|SHP|ORD|PAY|RET|CUST)-[A-Z0-9-]+",
+    re.IGNORECASE,
+)
+
+
+def is_concrete_unverified_claim(check: ClaimCheckResult) -> bool:
+    """True for a not_in_evidence claim of a specific-fact type that carries a concrete value."""
+    if check.status != "not_in_evidence" or check.claim_type not in _HALLUCINATION_CLAIM_TYPES:
+        return False
+    text = f"{check.claimed_value or ''} {check.claim_text}"
+    return _CONCRETE_VALUE_RE.search(text) is not None
+
 
 def enforce_code_rules(
     output: LLMJudgeOutput,
@@ -70,11 +91,7 @@ def enforce_code_rules(
             failures.append("factual_error")
 
     # Rule 3: Any not_in_evidence claim about specific facts -> hallucination
-    unverified_specific = [
-        c
-        for c in claim_checks
-        if c.status == "not_in_evidence" and c.claim_type in _HALLUCINATION_CLAIM_TYPES
-    ]
+    unverified_specific = [c for c in claim_checks if is_concrete_unverified_claim(c)]
     if unverified_specific and "hallucination" not in failures:
         failures.append("hallucination")
 
@@ -94,11 +111,7 @@ def _synthesize_fake_judge_output(
     failures: list[str] = []
 
     contradicted = [c for c in claim_checks if c.status == "contradicted"]
-    not_in_ev = [
-        c
-        for c in claim_checks
-        if c.status == "not_in_evidence" and c.claim_type in _HALLUCINATION_CLAIM_TYPES
-    ]
+    not_in_ev = [c for c in claim_checks if is_concrete_unverified_claim(c)]
 
     # Safety check
     safety_fail = any(

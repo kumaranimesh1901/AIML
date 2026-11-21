@@ -330,4 +330,7 @@ def verify_claims(
                 )
             )
 
+    # Carry the claimed value so downstream rules can tell concrete from generic claims
+    for claim, res in zip(claims, results, strict=True):
+        res.claimed_value = claim.claimed_value
     return results
