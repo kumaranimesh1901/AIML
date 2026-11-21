@@ -53,6 +53,10 @@ class LLMConfig(BaseModel):
     ollama_base_url: str = "http://localhost:11434"
     openai_base_url: str = "http://localhost:8000/v1"
     openai_api_key: str = ""
+    # Model for helper generation: controlled-failure rewrites, checklists, cluster labels, paraphrases
+    helper_model: str = "qwen2.5:7b"
+    # Context window requested from Ollama; must hold the longest judge prompt plus its reply
+    ollama_num_ctx: int = Field(default=8192, ge=2048)
     timeout_seconds: float = Field(default=120.0, gt=0)
     max_retries: int = Field(default=3, ge=0)
     retry_base_delay_seconds: float = Field(default=1.0, ge=0.0)
@@ -150,7 +154,7 @@ class JudgeConfig(BaseModel):
 
     provider: Literal["ollama", "openai_compatible", "fake"] = "ollama"
     model_name: str = "llama3.1:8b"
-    judge_version: str = "j1.2"
+    judge_version: str = "j1.3"
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     max_retries: int = Field(default=3, ge=0)
     top_k_policies: int = Field(default=3, ge=1)

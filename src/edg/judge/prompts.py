@@ -78,7 +78,11 @@ def build_judge_user_prompt(
         f"Evidence Status: {evidence.evidence_status}",
         f"State Snapshot JSON:\n{json.dumps(evidence.snapshot_json, sort_keys=True) if evidence.snapshot_json else 'NONE'}",
         f"Retrieved Policy Chunks:\n{json.dumps(evidence.policy_chunks, sort_keys=True)}",
-        f"Reference Answer:\n{evidence.reference_answer or 'NONE'}",
+        # Bitext reference answers are generic replies written for another store, so they are
+        # labelled as a style example and never as evidence of what this order requires.
+        "Reference Answer (generic example reply from a public dataset, NOT verified against this "
+        "order; facts come only from the snapshot and policies):\n"
+        f"{evidence.reference_answer or 'NONE'}",
         "Deterministic Claim Checks:\n"
         + json.dumps([c.model_dump() for c in claim_checks], sort_keys=True),
     ]

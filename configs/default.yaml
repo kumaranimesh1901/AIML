@@ -13,6 +13,8 @@ logging:
 llm:
   provider: "ollama"  # ollama | openai_compatible | fake
   ollama_base_url: "http://localhost:11434"
+  helper_model: "qwen2.5:7b"  # writes injected failures, checklists, cluster labels
+  ollama_num_ctx: 8192  # Ollama default (2048-4096) truncates judge prompts
   openai_base_url: "http://localhost:8000/v1"
   openai_api_key: ""
   timeout_seconds: 120.0
@@ -97,7 +99,7 @@ priority:
 judge:
   provider: "ollama"
   model_name: "llama3.1:8b"
-  judge_version: "j1.2"  # j1.2: judge prompt now lists taxonomy failure types
+  judge_version: "j1.3"  # j1.1 taxonomy names, j1.2 claim checks + scores, j1.3 num_ctx + reference label
   temperature: 0.0
   max_retries: 3
   top_k_policies: 3

@@ -117,3 +117,38 @@ def test_sut_tool_loop_constrains_ollama_output_to_action_schema(fake_ollama) ->
     fmt = server.payloads[0]["format"]
     assert isinstance(fmt, dict)
     assert "action" in json.dumps(fmt) and "final_answer" in json.dumps(fmt) and "tool_call" in json.dumps(fmt)
+
+
+# ---------------------------------------------------------------------------
+# Pre-run review: Ollama's default context window (2048-4096 tokens) is smaller than a judge
+# prompt (rubric + taxonomy + schema + snapshot + policies + reference + claim checks, about
+# 3-5k tokens). Ollama silently drops the start of an over-long prompt, so the judge lost its
+# rubric and failure-type rules. The client now sets num_ctx and warns when the window fills.
+# ---------------------------------------------------------------------------
+
+
+def test_ollama_requests_set_a_context_window_large_enough_for_the_judge(fake_ollama) -> None:  # type: ignore[no-untyped-def]
+    from edg.config import load_config
+    from edg.llm.client import create_llm_client
+
+    server = fake_ollama(['{"query": "Where is ORD-1?"}'])
+    cfg = load_config(small=True, overrides={"llm": {"provider": "ollama", "cache_enabled": False}})
+    client = create_llm_client(cfg.llm)
+    client.generate(prompt="hi", model="llama3.1:8b")
+    assert server.payloads[0]["options"]["num_ctx"] >= 8192
+
+
+def test_ollama_warns_when_the_prompt_filled_the_context_window(monkeypatch: pytest.MonkeyPatch, caplog) -> None:  # type: ignore[no-untyped-def]
+    real_client = httpx.Client
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"message": {"content": "ok"}, "prompt_eval_count": 4096, "eval_count": 10},
+        )
+
+    monkeypatch.setattr(httpx, "Client", lambda *a, **k: real_client(*a, **{**k, "transport": httpx.MockTransport(handler)}))
+    client = OllamaClient(default_model="llama3.1:8b", num_ctx=4096, cache_enabled=False)
+    with caplog.at_level("WARNING"):
+        client.generate(prompt="x" * 100)
+    assert any("ollama_context_window_full" in r.getMessage() for r in caplog.records)

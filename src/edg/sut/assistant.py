@@ -51,6 +51,11 @@ SUT_ACTION_JSON_SCHEMA: dict[str, Any] = {
 }
 
 
+# Used on the last step, once the tool budget is spent: only a final answer is allowed. Without
+# this a model that keeps calling tools had its raw tool-call JSON logged as the customer reply.
+SUT_FINAL_ANSWER_JSON_SCHEMA: dict[str, Any] = SUT_ACTION_JSON_SCHEMA["anyOf"][1]
+
+
 class AssistantResult(BaseModel):
     answer: str
     model_version: str
@@ -244,7 +249,9 @@ class CustomerSupportAssistant:
                     model=self.version_config.base_model,
                     temperature=self.version_config.temperature,
                     json_mode=True,
-                    json_schema=SUT_ACTION_JSON_SCHEMA,
+                    json_schema=(
+                        SUT_FINAL_ANSWER_JSON_SCHEMA if step == self.max_tool_calls else SUT_ACTION_JSON_SCHEMA
+                    ),
                 )
             except LLMError as exc:
                 error_msg = str(exc)
@@ -262,6 +269,9 @@ class CustomerSupportAssistant:
                 final_answer = raw_text
                 break
 
+            if not isinstance(parsed, dict):
+                final_answer = raw_text
+                break
             action = parsed.get("action")
             if action == "tool_call" and step < self.max_tool_calls:
                 tool_name = str(parsed.get("tool", ""))
@@ -274,7 +284,11 @@ class CustomerSupportAssistant:
                     f"Tool result: {json.dumps(tool_out)}"
                 )
             elif action == "final_answer" or "answer" in parsed:
-                final_answer = str(parsed.get("answer", "")).strip() or raw_text
+                final_answer = str(parsed.get("answer", "")).strip() or None
+                break
+            elif action == "tool_call":
+                # Tool budget spent and the model still wants a tool: never log the JSON as a reply
+                error_msg = "tool_call_limit_exceeded"
                 break
             else:
                 final_answer = raw_text

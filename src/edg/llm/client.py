@@ -292,6 +292,7 @@ class OllamaClient(BaseLLMClient):
         *,
         base_url: str = "http://localhost:11434",
         default_model: str = "qwen2.5:1.5b",
+        num_ctx: int = 8192,
         timeout_seconds: float = 120.0,
         max_retries: int = 3,
         retry_base_delay_seconds: float = 1.0,
@@ -309,6 +310,7 @@ class OllamaClient(BaseLLMClient):
         )
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.num_ctx = num_ctx
 
     def _send(self, request: LLMRequest) -> tuple[str, dict[str, Any]]:
         messages: list[dict[str, str]] = []
@@ -320,7 +322,9 @@ class OllamaClient(BaseLLMClient):
             "model": request.model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": request.temperature},
+            # Ollama's default window (2048-4096 tokens) is smaller than a judge prompt, and Ollama
+            # silently drops the START of an over-long prompt (system prompt, rubric, taxonomy).
+            "options": {"temperature": request.temperature, "num_ctx": self.num_ctx},
         }
         if request.max_tokens is not None:
             payload["options"]["num_predict"] = request.max_tokens
@@ -333,6 +337,12 @@ class OllamaClient(BaseLLMClient):
             resp.raise_for_status()
             data = resp.json()
             text = data.get("message", {}).get("content", "")
+            used = int(data.get("prompt_eval_count") or 0) + int(data.get("eval_count") or 0)
+            if used >= self.num_ctx:
+                logger.warning(
+                    "ollama_context_window_full",
+                    extra={"model": request.model, "num_ctx": self.num_ctx, "tokens_used": used},
+                )
             return text, data
 
 
@@ -411,6 +421,7 @@ def create_llm_client(
         return OllamaClient(
             base_url=config.ollama_base_url,
             default_model=default_model,
+            num_ctx=config.ollama_num_ctx,
             timeout_seconds=config.timeout_seconds,
             max_retries=config.max_retries,
             retry_base_delay_seconds=config.retry_base_delay_seconds,

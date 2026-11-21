@@ -1,0 +1,120 @@
+# Smoke profile: the whole pipeline on a few dozen items with the real local models, to catch
+# live-model problems in minutes before a long run. Results are NOT meaningful; only the checks
+# printed by `edg run-all` (errors, judge errors, context warnings) matter.
+# Usage: edg run-all --config configs/smoke.yaml --hf --st --spacy --annotations-dir data/annotations_smoke --summary-out data/exports/smoke_summary.md
+profile: smoke
+seed: 42
+database:
+  url: sqlite:///data/edg_smoke.db
+  echo: false
+logging:
+  level: INFO
+  format: json
+llm:
+  provider: ollama
+  ollama_base_url: http://localhost:11434
+  helper_model: qwen2.5:7b
+  ollama_num_ctx: 8192
+  openai_base_url: http://localhost:8000/v1
+  openai_api_key: ''
+  timeout_seconds: 120.0
+  max_retries: 3
+  retry_base_delay_seconds: 1.0
+  retry_backoff_factor: 2.0
+  cache_enabled: true
+world:
+  policy_version: v1
+  catalogue_size: 60
+  n_customers: 40
+  n_orders: 80
+  hard_state_rates:
+    delivered_disputed: 0.05
+    duplicate_charge: 0.04
+    past_return_window: 0.05
+    boundary_return_window: 0.04
+    partial_shipment: 0.05
+    cancel_after_shipping: 0.05
+    refund_approved_not_issued: 0.05
+    wrong_item_delivered: 0.04
+queries:
+  bitext_sample_size: 40
+  hard_query_count: 16
+  hard_query_generator_model: qwen2.5:3b
+sut:
+  max_tool_calls: 4
+  failure_injection_rate: 0.1
+  versions:
+    v1:
+      name: v1
+      provider: ollama
+      base_model: qwen2.5:1.5b
+      retrieval_enabled: false
+      temperature: 0.2
+      system_prompt: You are a customer support assistant for NovaMart. Answer the
+        customer's question concisely in 2 to 6 sentences using the available tools.
+    v2:
+      name: v2
+      provider: ollama
+      base_model: qwen2.5:7b
+      retrieval_enabled: true
+      temperature: 0.1
+      system_prompt: You are a careful customer support assistant for NovaMart. Always
+        verify order, payment, shipment, return, and store policy details using the
+        tools before answering. Never guess dates, amounts, or policy rules. Answer
+        clearly in 2 to 6 sentences.
+cleaning:
+  near_dup_cosine_threshold: 0.95
+embeddings:
+  model_name: all-MiniLM-L6-v2
+  alternative_model_name: BAAI/bge-small-en-v1.5
+  dimension: 384
+  batch_size: 64
+clustering:
+  umap_n_components: 10
+  umap_n_neighbors: 10
+  umap_min_dist: 0.0
+  umap_metric: cosine
+  umap2d_min_dist: 0.1
+  hdbscan_min_cluster_sizes:
+  - 3
+  - 5
+  hdbscan_min_samples:
+  - 2
+  - 3
+  max_noise_share: 0.35
+  stability_seeds:
+  - 42
+  - 101
+  - 202
+  intent_purity_threshold: 0.5
+priority:
+  weights:
+    novelty: 0.2
+    small_cluster: 0.15
+    multi_intent: 0.15
+    state_conflict: 0.2
+    policy_boundary: 0.15
+    response_drift: 0.15
+  judge_sample_size: 30
+  random_control_share: 0.2
+  stratified_share: 0.4
+  priority_share: 0.4
+judge:
+  provider: ollama
+  model_name: llama3.1:8b
+  judge_version: j1.3
+  temperature: 0.0
+  max_retries: 3
+  top_k_policies: 3
+  low_confidence_threshold: 0.7
+  dev_annotation_size: 6
+  test_annotation_size: 10
+testcases:
+  dedupe_cosine_threshold: 0.92
+  silver_confidence_threshold: 0.85
+evaluation:
+  checklist_pass_threshold: 0.8
+  bootstrap_resamples: 200
+  min_category_size: 10
+  alpha: 0.05
+  flip_rate_sample_share: 0.05

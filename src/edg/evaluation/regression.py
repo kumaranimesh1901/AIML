@@ -57,6 +57,11 @@ def _extract_metric_flags(
     taxonomy: TaxonomyConfig,
 ) -> dict[str, bool | None]:
     failures = list(jdg.failure_types or [])
+    if "judge_error" in failures:
+        # The judge produced no verdict: this says nothing about the model, so the case is
+        # excluded (not_assessable) from every metric instead of counting as a model failure.
+        metrics = ["pass_rate", "hallucination_rate", "failure_rate", "critical_failure_rate"]
+        return {m: None for m in [*metrics, *(f"{d}_pass_rate" for d in DIMENSIONS)]}
     has_failure = len(failures) > 0 or any(
         getattr(jdg, f"{d}_verdict") == "fail" for d in DIMENSIONS
     )

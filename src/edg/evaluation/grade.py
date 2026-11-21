@@ -19,6 +19,7 @@ from edg.db.models import (
 )
 from edg.judge.evidence import assemble_evidence
 from edg.judge.llm_judge import HybridJudge, _preload_policies
+from edg.judge.verifier import text_mentions_amount, text_mentions_date, text_mentions_status
 from edg.labeling.severity import resolve_severity_for_interaction
 from edg.llm.cache import LLMCache
 from edg.llm.client import BaseLLMClient, create_llm_client
@@ -44,16 +45,18 @@ def evaluate_checklist(
         satisfied = True
 
         # Check explicit dates, amounts, and quoted statuses if present in the must_do item
+        # Facts may be written in any spelling: "2026-11-25" / "November 25", "$89.99" / "89.99 USD",
+        # "out_for_delivery" / "out for delivery"
         dates = _DATE_RE.findall(item)
-        if dates and not any(d in response_text for d in dates):
+        if dates and not any(text_mentions_date(response_text, d) for d in dates):
             satisfied = False
 
         amounts = _AMOUNT_RE.findall(item)
-        if amounts and not any(f"${a}" in response_text for a in amounts):
+        if amounts and not any(text_mentions_amount(response_text, float(a)) for a in amounts):
             satisfied = False
 
         statuses = _QUOTED_STATUS_RE.findall(item_low)
-        if statuses and not any(st in resp_low for st in statuses):
+        if statuses and not any(text_mentions_status(response_text, st) for st in statuses):
             satisfied = False
 
         # Key policy phrase checks

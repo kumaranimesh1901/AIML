@@ -43,6 +43,24 @@ def _load_freeze_registry(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def ensure_judge_can_freeze(
+    *,
+    judge_version: str,
+    judge_model: str,
+    prompt_hash: str,
+    registry_path: str | Path = DEFAULT_FREEZE_REGISTRY,
+) -> None:
+    """Raise JudgeFreezeError now if `freeze_judge_version` would refuse these values later."""
+    existing = _load_freeze_registry(Path(registry_path)).get(judge_version)
+    if existing and (existing["prompt_hash"] != prompt_hash or existing["judge_model"] != judge_model):
+        raise JudgeFreezeError(
+            f"Judge version '{judge_version}' is already frozen in {registry_path} with "
+            f"judge_model={existing['judge_model']} and prompt_hash={existing['prompt_hash']}, "
+            f"but this run would use judge_model={judge_model} and prompt_hash={prompt_hash}. "
+            "Bump judge.judge_version or use a fresh --annotations-dir."
+        )
+
+
 def freeze_judge_version(
     *,
     judge_version: str,

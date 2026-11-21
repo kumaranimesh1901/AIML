@@ -73,6 +73,40 @@ def _normalise_date(value: str) -> tuple[int | None, int, int] | None:
     return None
 
 
+def find_dates(text: str) -> list[tuple[int | None, int, int]]:
+    """Every calendar date written in `text`, in any of the supported spellings."""
+    low = text.lower()
+    found: list[tuple[int | None, int, int]] = []
+    for m in _ISO_DATE_RE.finditer(low):
+        found.append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
+    for m in _US_DATE_RE.finditer(low):
+        found.append((int(m.group(3)), int(m.group(1)), int(m.group(2))))
+    for m in _MONTH_FIRST_RE.finditer(low):
+        if m.group(1) in _MONTHS:
+            found.append(((int(m.group(3)) if m.group(3) else None), _MONTHS[m.group(1)], int(m.group(2))))
+    for m in _DAY_FIRST_RE.finditer(low):
+        if m.group(2) in _MONTHS:
+            found.append(((int(m.group(3)) if m.group(3) else None), _MONTHS[m.group(2)], int(m.group(1))))
+    return found
+
+
+def text_mentions_date(text: str, iso_date: str) -> bool:
+    """True if `text` states the ISO date `iso_date` (YYYY-MM-DD) in any supported spelling."""
+    y, mo, d = (int(x) for x in iso_date[:10].split("-"))
+    return any(fm == mo and fd == d and (fy is None or fy == y) for fy, fm, fd in find_dates(text))
+
+
+def text_mentions_amount(text: str, amount: float) -> bool:
+    """True if any number written in `text` equals `amount` (to the cent)."""
+    return any(abs(float(m.group(0).replace(",", "")) - amount) <= 0.01 for m in _NUMBER_RE.finditer(text))
+
+
+def text_mentions_status(text: str, status: str) -> bool:
+    """True if `text` names the status code ("out_for_delivery" also matches "out for delivery")."""
+    spaced = re.sub(r"[\s_\-]+", " ", text.lower())
+    return re.search(rf"\b{re.escape(status.replace('_', ' '))}\b", spaced) is not None
+
+
 def _date_matches(value: str, valid_dates: set[str]) -> bool:
     parsed = _normalise_date(value)
     if parsed is None:

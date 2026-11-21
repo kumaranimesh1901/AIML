@@ -305,7 +305,7 @@ def cluster_run(
     engine = init_db(cfg.database.url, use_alembic=True, echo=cfg.database.echo)
     with get_session(engine) as session:
         cache = LLMCache(engine=engine) if cfg.llm.cache_enabled else None
-        client = create_llm_client(cfg.llm, cache=cache)
+        client = create_llm_client(cfg.llm, default_model=cfg.llm.helper_model, cache=cache)
         with track_run(session, step="cluster_run", config=cfg) as (run, counts):
             result = run_clustering_pipeline(
                 session,
@@ -523,7 +523,7 @@ def testcases_generate(
     engine = init_db(cfg.database.url, use_alembic=True, echo=cfg.database.echo)
     with get_session(engine) as session:
         cache = LLMCache(engine=engine) if cfg.llm.cache_enabled else None
-        client = create_llm_client(cfg.llm, cache=cache)
+        client = create_llm_client(cfg.llm, default_model=cfg.llm.helper_model, cache=cache)
         with track_run(session, step="testcases_generate", config=cfg) as (run, counts):
             result = run_testcase_generation(
                 session,
@@ -681,7 +681,7 @@ def run_all(
             freeze_registry_path=annotations_dir / "frozen_judges.json",
             summary_output_path=summary_out,
         )
-    except WorldAlreadyBuiltError as exc:
+    except (WorldAlreadyBuiltError, JudgeFreezeError) as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(res, indent=2, default=str))

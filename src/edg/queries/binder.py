@@ -39,7 +39,11 @@ def _fill_placeholders(text: str, snapshot_json: dict[str, Any]) -> str:
 
     order_id = str(order["order_id"])
     total_str = f"{order['total_amount']:.2f}"
-    refund_str = f"{returns[0]['refund_amount']:.2f}" if returns else total_str
+    refund_str = (
+        f"{returns[0]['refund_amount']:.2f}"
+        if returns and returns[0].get("refund_amount") is not None
+        else None
+    )
     delivery_date = (
         shipments[0]["expected_delivery"][:10]
         if shipments and shipments[0].get("expected_delivery")
@@ -49,25 +53,45 @@ def _fill_placeholders(text: str, snapshot_json: dict[str, Any]) -> str:
 
     def _replace(match: re.Match[str]) -> str:
         key = match.group(1).strip().lower()
-        if "order" in key:
+        # Store-contact and website placeholders are not order facts: give them neutral NovaMart
+        # wording rather than an order id or customer token the judge would read as a fact.
+        if "phone" in key:
+            return "the NovaMart support line"
+        if "hours" in key:
+            return "our support hours"
+        if "live chat" in key or "chat" in key:
+            return "NovaMart live chat"
+        if any(k in key for k in ("url", "website", "portal", "interaction", "section", "settings", "profile")):
+            return "your NovaMart account page"
+        if any(k in key for k in ("city", "country", "address", "location")):
+            return "your delivery address"
+        if "order number" in key or "order id" in key or key == "order":
             return order_id
-        if "refund" in key or "amount" in key or "price" in key:
-            return f"${refund_str}"
+        if "invoice" in key:
+            return f"the invoice for order {order_id}"
+        if "tracking" in key or "shipment" in key:
+            return str(shipments[0]["shipment_id"]) if shipments else order_id
+        if "refund" in key:
+            return f"${refund_str}" if refund_str is not None else "the refund amount"
+        if "amount" in key or "price" in key or "money" in key:
+            return f"${total_str}"
         if "currency" in key:
             return "$"
         if "date" in key or "delivery" in key:
             return delivery_date
         if "email" in key:
             return str(customer["email_token"])
+        if "salutation" in key:
+            return ""
         if "name" in key or "client" in key or "customer" in key:
             return str(customer["name_token"])
         if "product" in key or "item" in key:
             return str(item_title)
         if "account" in key:
             return "Standard"
-        if "tracking" in key or "shipment" in key:
-            return str(shipments[0]["shipment_id"]) if shipments else order_id
-        return order_id
+        if "order" in key:
+            return order_id
+        return "NovaMart"
 
     filled = _PLACEHOLDER_RE.sub(_replace, text)
     if order_id not in filled:

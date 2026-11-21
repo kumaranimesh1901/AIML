@@ -159,7 +159,7 @@ def run_sut_pipeline(
             injection_rate=config.sut.failure_injection_rate,
             seed=config.seed,
             llm_client=client,
-            rewrite_model=ver_cfg.base_model,
+            rewrite_model=config.llm.helper_model,
         )
 
     counts: dict[str, Any] = {

@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 
 from edg.annotation.agreement import (
     DEFAULT_FREEZE_REGISTRY,
+    ensure_judge_can_freeze,
     evaluate_frozen_judge,
     evaluate_prompt_tuning,
     freeze_judge_version,
@@ -106,8 +107,20 @@ def run_full_pipeline(
             f"{config.database.url} already contains pipeline data. Delete it (e.g. `rm data/edg.db`) "
             "or pass a fresh --db-url, then re-run."
         )
+    # Fail before hours of SUT and judge work, not at calibration, if the judge cannot be frozen
+    rubric = load_judge_rubric()
+    try:
+        ensure_judge_can_freeze(
+            judge_version=config.judge.judge_version,
+            judge_model=config.judge.model_name,
+            prompt_hash=compute_prompt_hash(build_judge_system_prompt(rubric), rubric),
+            registry_path=freeze_registry_path,
+        )
+    except Exception:
+        engine.dispose()
+        raise
     cache = LLMCache(engine=engine) if config.llm.cache_enabled else None
-    client = create_llm_client(config.llm, cache=cache)
+    client = create_llm_client(config.llm, default_model=config.llm.helper_model, cache=cache)
 
     results: dict[str, Any] = {"profile": config.profile, "release_id": release_id}
 
