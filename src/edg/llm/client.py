@@ -80,6 +80,36 @@ class BaseLLMClient(ABC):
         self.retry_backoff_factor = retry_backoff_factor
         self.cache = cache if cache_enabled else None
 
+    def _safe_cache_get(self, cache_key: str) -> tuple[str, float] | None:
+        assert self.cache is not None
+        try:
+            return self.cache.get(cache_key)
+        except Exception as exc:
+            logger.warning("llm_cache_read_failed", extra={"provider": self.provider, "error": str(exc)})
+            return None
+
+    def _safe_cache_set(
+        self,
+        *,
+        cache_key: str,
+        model: str,
+        prompt_hash: str,
+        response_text: str,
+        latency_ms: float,
+    ) -> None:
+        assert self.cache is not None
+        try:
+            self.cache.set(
+                cache_key=cache_key,
+                provider=self.provider,
+                model=model,
+                prompt_hash=prompt_hash,
+                response_text=response_text,
+                latency_ms=latency_ms,
+            )
+        except Exception as exc:
+            logger.warning("llm_cache_write_failed", extra={"provider": self.provider, "error": str(exc)})
+
     @abstractmethod
     def _send(self, request: LLMRequest) -> tuple[str, dict[str, Any]]:
         """Perform a single raw call to the underlying provider and return `(text, raw_payload)`."""
@@ -108,7 +138,7 @@ class BaseLLMClient(ABC):
         )
 
         if self.cache is not None and not bypass_cache:
-            cached = self.cache.get(cache_key)
+            cached = self._safe_cache_get(cache_key)
             if cached is not None:
                 text, latency_ms = cached
                 return LLMResponse(
@@ -134,23 +164,6 @@ class BaseLLMClient(ABC):
             try:
                 text, raw = self._send(request)
                 latency_ms = (time.perf_counter() - start) * 1000.0
-                if self.cache is not None and not bypass_cache:
-                    self.cache.set(
-                        cache_key=cache_key,
-                        provider=self.provider,
-                        model=resolved_model,
-                        prompt_hash=prompt_hash,
-                        response_text=text,
-                        latency_ms=latency_ms,
-                    )
-                return LLMResponse(
-                    text=text,
-                    model=resolved_model,
-                    provider=self.provider,
-                    latency_ms=latency_ms,
-                    cached=False,
-                    raw=raw,
-                )
             except Exception as exc:
                 last_exc = exc
                 if attempt < self.max_retries:
@@ -168,6 +181,26 @@ class BaseLLMClient(ABC):
                     )
                     if delay > 0:
                         time.sleep(delay)
+                continue
+
+            # The provider call succeeded: a cache backend problem must never be retried as an
+            # LLM failure (which would re-send the request and eventually discard a good answer).
+            if self.cache is not None and not bypass_cache:
+                self._safe_cache_set(
+                    cache_key=cache_key,
+                    model=resolved_model,
+                    prompt_hash=prompt_hash,
+                    response_text=text,
+                    latency_ms=latency_ms,
+                )
+            return LLMResponse(
+                text=text,
+                model=resolved_model,
+                provider=self.provider,
+                latency_ms=latency_ms,
+                cached=False,
+                raw=raw,
+            )
 
         raise LLMRetryExhaustedError(
             f"LLM call failed after {self.max_retries + 1} attempts "

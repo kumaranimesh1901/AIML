@@ -7,7 +7,7 @@ import random
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from edg.annotation.agreement import (
     DEFAULT_FREEZE_REGISTRY,
@@ -22,7 +22,7 @@ from edg.benchmark.releases import create_benchmark_release
 from edg.cleaning.pipeline import run_cleaning_pipeline
 from edg.clustering.pipeline import run_clustering_pipeline
 from edg.config import AppConfig
-from edg.db.models import Judgement
+from edg.db.models import InteractionRaw, Judgement, StateSnapshot
 from edg.db.repositories import source_judgements_only, track_run
 from edg.db.session import get_session, init_db
 from edg.embeddings.embedder import compare_embedding_models, embed_interactions
@@ -38,7 +38,7 @@ from edg.pipeline.report import write_results_summary_markdown
 from edg.priority.sampler import run_priority_and_sampling
 from edg.sut.runner import run_sut_pipeline
 from edg.testcases.generator import run_testcase_generation
-from edg.world.store_generator import generate_store_world
+from edg.world.store_generator import WorldAlreadyBuiltError, generate_store_world
 
 logger = get_logger(__name__)
 
@@ -96,6 +96,16 @@ def run_full_pipeline(
 ) -> dict[str, Any]:
     """Execute the complete EDG pipeline from empty DB to frozen release, V1 vs V2 report, and summary."""
     engine = init_db(config.database.url, use_alembic=True, echo=config.database.echo)
+    with get_session(engine) as session:
+        populated = session.scalar(select(func.count()).select_from(StateSnapshot)) or 0
+        populated += session.scalar(select(func.count()).select_from(InteractionRaw)) or 0
+    if populated:
+        engine.dispose()
+        raise WorldAlreadyBuiltError(
+            f"`edg run-all` builds the whole pipeline from an empty database, but "
+            f"{config.database.url} already contains pipeline data. Delete it (e.g. `rm data/edg.db`) "
+            "or pass a fresh --db-url, then re-run."
+        )
     cache = LLMCache(engine=engine) if config.llm.cache_enabled else None
     client = create_llm_client(config.llm, cache=cache)
 

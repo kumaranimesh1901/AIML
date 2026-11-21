@@ -6,6 +6,7 @@ import random
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from edg.config import AppConfig
@@ -93,6 +94,10 @@ def _choose_order_status(tags: set[str], rng: random.Random) -> str:
     )[0]
 
 
+class WorldAlreadyBuiltError(RuntimeError):
+    """Raised when the target database already contains a generated store world."""
+
+
 def generate_store_world(
     session: Session,
     config: AppConfig,
@@ -102,6 +107,14 @@ def generate_store_world(
     use_sentence_transformers: bool = True,
 ) -> dict[str, Any]:
     """Generate policies, catalogue, customers, orders, related records, and state snapshots."""
+    existing = session.scalar(select(func.count()).select_from(StateSnapshot)) or 0
+    existing += session.scalar(select(func.count()).select_from(Customer)) or 0
+    if existing:
+        raise WorldAlreadyBuiltError(
+            "This database already contains a store world (customers/snapshots). The world is "
+            "generated once and frozen before any query is answered, so it is never regenerated "
+            "in place. Use a fresh database (delete the SQLite file or pass a new --db-url) to rebuild."
+        )
     rng = random.Random(config.seed)
 
     policy_chunks = load_and_store_policies(

@@ -38,7 +38,7 @@ from edg.pipeline.orchestrator import run_full_pipeline
 from edg.priority.sampler import run_priority_and_sampling
 from edg.sut.runner import run_sut_pipeline
 from edg.testcases.generator import run_testcase_generation
-from edg.world.store_generator import generate_store_world
+from edg.world.store_generator import WorldAlreadyBuiltError, generate_store_world
 
 app = typer.Typer(
     name="edg",
@@ -156,16 +156,20 @@ def world_build(
     cfg = load_config(config_path, small=small, overrides=overrides)
     setup_logging(cfg.logging)
     engine = init_db(cfg.database.url, use_alembic=True, echo=cfg.database.echo)
-    with get_session(engine) as session:
-        with track_run(session, step="world_build", config=cfg) as (run, counts):
-            result = generate_store_world(
-                session,
-                cfg,
-                run_id=run.run_id,
-                prefer_hf_catalogue=not synthetic_catalogue,
-                use_sentence_transformers=use_st,
-            )
-            counts.update(result)
+    try:
+        with get_session(engine) as session:
+            with track_run(session, step="world_build", config=cfg) as (run, counts):
+                result = generate_store_world(
+                    session,
+                    cfg,
+                    run_id=run.run_id,
+                    prefer_hf_catalogue=not synthetic_catalogue,
+                    use_sentence_transformers=use_st,
+                )
+                counts.update(result)
+    except WorldAlreadyBuiltError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(counts, indent=2))
 
 
@@ -666,16 +670,20 @@ def run_all(
     cfg = load_config(config_path, small=small, overrides=overrides or None)
     setup_logging(cfg.logging)
 
-    res = run_full_pipeline(
-        cfg,
-        release_id=release_id,
-        prefer_hf=prefer_hf,
-        use_sentence_transformers=use_st,
-        use_spacy=use_spacy,
-        annotations_dir=annotations_dir,
-        freeze_registry_path=annotations_dir / "frozen_judges.json",
-        summary_output_path=summary_out,
-    )
+    try:
+        res = run_full_pipeline(
+            cfg,
+            release_id=release_id,
+            prefer_hf=prefer_hf,
+            use_sentence_transformers=use_st,
+            use_spacy=use_spacy,
+            annotations_dir=annotations_dir,
+            freeze_registry_path=annotations_dir / "frozen_judges.json",
+            summary_output_path=summary_out,
+        )
+    except WorldAlreadyBuiltError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(res, indent=2, default=str))
 
 

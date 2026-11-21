@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -43,11 +44,25 @@ def create_db_engine(database_url: str, *, echo: bool = False) -> Engine:
     return engine
 
 
+_ACTIVE_SESSION: ContextVar[Session | None] = ContextVar("edg_active_session", default=None)
+
+
+def get_active_session() -> Session | None:
+    """Return the innermost session opened by `get_session` in the current context, if any.
+
+    Side-channel writers (e.g. the LLM response cache) use it to write through the pipeline's own
+    connection instead of a second connection, which on SQLite would block on the write lock the
+    pipeline transaction already holds (`database is locked`).
+    """
+    return _ACTIVE_SESSION.get()
+
+
 @contextmanager
 def get_session(engine: Engine | Connection) -> Iterator[Session]:
     """Provide a transactional SQLAlchemy session scope."""
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     session = factory()
+    token = _ACTIVE_SESSION.set(session)
     try:
         yield session
         session.commit()
@@ -55,6 +70,7 @@ def get_session(engine: Engine | Connection) -> Iterator[Session]:
         session.rollback()
         raise
     finally:
+        _ACTIVE_SESSION.reset(token)
         session.close()
 
 
