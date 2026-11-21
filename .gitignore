@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Environment & local DBs
+.env
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated data (keep directory structure)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/synthetic/*
+!data/synthetic/.gitkeep
+data/annotations/*
+!data/annotations/.gitkeep
+data/exports/*
+!data/exports/.gitkeep
+!data/exports/results_summary.md

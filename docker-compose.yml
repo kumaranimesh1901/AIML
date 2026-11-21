@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: edg
+      POSTGRES_PASSWORD: edg
+      POSTGRES_DB: edg
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edg -d edg"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      EDG_DATABASE_URL: postgresql+psycopg://edg:edg@postgres:5432/edg
+      EDG_OLLAMA_BASE_URL: http://ollama:11434
+      EDG_LOG_LEVEL: INFO
+      EDG_LOG_FORMAT: json
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./configs:/app/configs
+
+volumes:
+  pgdata:
+  ollama_data:

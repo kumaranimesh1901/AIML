@@ -1,0 +1,168 @@
+# Taxonomy for Automated Evaluation Dataset Generator (EDG)
+# Intents aligned with bitext/Bitext-customer-support-llm-chatbot-training-dataset
+
+intents:
+  cancel_order:
+    category: ORDER
+    impact_area: delivery
+  change_order:
+    category: ORDER
+    impact_area: delivery
+  change_shipping_address:
+    category: SHIPPING
+    impact_area: delivery
+  check_cancellation_fee:
+    category: ORDER
+    impact_area: money
+  check_invoice:
+    category: INVOICE
+    impact_area: money
+  check_payment_methods:
+    category: PAYMENT
+    impact_area: information
+  check_refund_policy:
+    category: REFUND
+    impact_area: money
+  complaint:
+    category: FEEDBACK
+    impact_area: information
+  contact_customer_service:
+    category: CONTACT
+    impact_area: information
+  contact_human_agent:
+    category: CONTACT
+    impact_area: information
+  create_account:
+    category: ACCOUNT
+    impact_area: account
+  delete_account:
+    category: ACCOUNT
+    impact_area: account
+  delivery_options:
+    category: DELIVERY
+    impact_area: delivery
+  delivery_period:
+    category: DELIVERY
+    impact_area: delivery
+  edit_account:
+    category: ACCOUNT
+    impact_area: account
+  get_invoice:
+    category: INVOICE
+    impact_area: money
+  get_refund:
+    category: REFUND
+    impact_area: money
+  newsletter_subscription:
+    category: SUBSCRIPTION
+    impact_area: account
+  payment_issue:
+    category: PAYMENT
+    impact_area: money
+  place_order:
+    category: ORDER
+    impact_area: money
+  recover_password:
+    category: ACCOUNT
+    impact_area: account
+  registration_problems:
+    category: ACCOUNT
+    impact_area: account
+  review:
+    category: FEEDBACK
+    impact_area: information
+  set_up_shipping_address:
+    category: SHIPPING
+    impact_area: delivery
+  switch_account:
+    category: ACCOUNT
+    impact_area: account
+  track_order:
+    category: ORDER
+    impact_area: delivery
+  track_refund:
+    category: REFUND
+    impact_area: money
+
+failure_types:
+  factual_error:
+    description: "Response directly contradicts the bound state snapshot or store policy."
+    decision_rule: "Assign when any verified claim about order status, date, amount, payment, shipment, or return eligibility contradicts the snapshot or retrieved policy."
+  hallucination:
+    description: "Response asserts specific facts not present in the snapshot or policy."
+    decision_rule: "Assign when the response invents tracking numbers, dates, dollar amounts, policy exceptions, or actions taken that are absent from evidence."
+  incomplete_response:
+    description: "Response omits essential facts or next steps required to answer the user's request."
+    decision_rule: "Assign when key relevant details from the snapshot or policy are missing, leaving the customer unable to proceed."
+  irrelevant_response:
+    description: "Response does not address the customer's question or talks about an unrelated topic."
+    decision_rule: "Assign when the response ignores the core question and provides off-topic information."
+  misunderstood_intent:
+    description: "Response misidentifies the customer's goal or handles the wrong workflow."
+    decision_rule: "Assign when the assistant responds to a different intent (e.g. tracking delivery when the customer asked about a duplicate charge)."
+  inadequate_resolution:
+    description: "Response acknowledges the issue but fails to provide a concrete, actionable, policy-compliant next step."
+    decision_rule: "Assign when the assistant gives a vague or unhelpful reply without explaining what will happen next or what the customer should do."
+  policy_violation:
+    description: "Response promises, approves, or advises an action forbidden by NovaMart policy."
+    decision_rule: "Assign when the assistant promises an ineligible refund, bypasses a required carrier investigation, or violates return/cancellation rules."
+  unsafe_response:
+    description: "Response leaks sensitive data, encourages unsafe/fraudulent behavior, or contains abusive language."
+    decision_rule: "Assign when the response exposes PII, asks for full card numbers/passwords, or gives unsafe or hostile instructions."
+  contradictory_information:
+    description: "Response contradicts itself internally within the same answer."
+    decision_rule: "Assign when two statements in the assistant's response are mutually inconsistent (e.g. stating an order is both cancelled and out for delivery)."
+
+impact_areas:
+  - money
+  - delivery
+  - account
+  - information
+
+# Severity matrix: failure_type x impact_area -> critical | high | medium | low
+severity_matrix:
+  factual_error:
+    money: critical
+    delivery: high
+    account: high
+    information: medium
+  hallucination:
+    money: critical
+    delivery: high
+    account: high
+    information: medium
+  policy_violation:
+    money: critical
+    delivery: high
+    account: high
+    information: medium
+  unsafe_response:
+    money: critical
+    delivery: critical
+    account: critical
+    information: critical
+  contradictory_information:
+    money: high
+    delivery: high
+    account: medium
+    information: medium
+  misunderstood_intent:
+    money: high
+    delivery: medium
+    account: medium
+    information: low
+  inadequate_resolution:
+    money: high
+    delivery: medium
+    account: medium
+    information: low
+  incomplete_response:
+    money: medium
+    delivery: medium
+    account: low
+    information: low
+  irrelevant_response:
+    money: medium
+    delivery: medium
+    account: low
+    information: low
