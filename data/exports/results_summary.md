@@ -15,20 +15,20 @@
 
 | Run ID | Step | Status | Key Counts |
 |---|---|---|---|
-| `run_60e2784fd50e` | `world_build` | `completed` | policy_chunks=17, products=200, catalogue_source=synthetic, customers=150, orders=300, payments=312, shipments=280, refunds_returns=69, snapshots=300 |
-| `run_ab01f103b9e5` | `sut_run_v1` | `completed` | model_version=v1, bitext_queries=400, hard_queries=100, natural_inserted=500, errors=0, controlled_injected=50 |
-| `run_131809874697` | `clean_run` | `completed` | records_in=550, records_out=550, valid_count=550, rejected_count=0, pii_replacements=0, dup_groups=507, dup_share=0.0782, throughput_per_min=491272.5 |
-| `run_7f6365e0e754` | `embed_run` | `completed` | model_name=all-MiniLM-L6-v2, queries_processed=550, responses_processed=550, rows_inserted=1100, cache_hits=0, cache_misses=1100, cache_hit_rate=0.0, seconds_pe |
-| `run_498ccae2f24b` | `cluster_run` | `completed` | clustering_run_id=clrun_3682af22c035, representatives_clustered=458, duplicates_propagated=42, best_min_cluster_size=5, best_min_samples=3, n_clusters=40, noise |
-| `run_5fde93a4bc40` | `priority_run` | `completed` | clustering_run_id=clrun_3682af22c035, scored_count=500, min_score=0.096, mean_score=0.275, max_score=0.7191, population_size=500, sampled_total=300, random_cont |
-| `run_ebcca8ca701f` | `judge_run` | `completed` | total_targets=350, judged_new=350, cache_hits=0, judge_errors=0, abstentions=0, failures_detected=126, judge_model=llama3.1:8b, judge_version=j1.3, prompt_hash= |
-| `run_816edc2e2641` | `calibrate_import` | `completed` | dev_imported=40, test_imported=60, double_annotated=50 |
-| `run_85d9dca6b1cd` | `label_run` | `completed` | labeled_count=350, failures_count=126, needs_human_review_count=60 |
-| `run_397e8c3761e3` | `testcases_generate` | `completed` | candidates_considered=220, duplicates_merged=0, test_cases_created=220, approved_silver=176, pending_candidate=44, variants_created=10 |
-| `run_914907efd6be` | `release_create_v1.0` | `completed` | release_id=v1.0, content_hash=696b48ffd66a6728bd5957d0e66dcd1be3535665adc14a971bc6236b7a6f1b31, judge_version=j1.3, total_cases=176 |
-| `run_f7a86effa1fb` | `eval_replay_v1.0_v1` | `completed` | release_id=v1.0, model_id=v1, judge_version=j1.3, total_release_items=176, evaluated_new=176, passed_new=105, pass_rate_new=0.5966 |
-| `run_bd6cd3de0d4e` | `eval_replay_v1.0_v2` | `completed` | release_id=v1.0, model_id=v2, judge_version=j1.3, total_release_items=176, evaluated_new=176, passed_new=157, pass_rate_new=0.892 |
-| `run_b5e5dfb03d43` | `eval_compare_v1.0_v1_vs_v2` | `completed` | n_shared_cases=176, flagged_regressions_count=0 |
+| `run_b3cbc4dcd7b9` | `world_build` | `completed` | policy_chunks=17, products=200, catalogue_source=synthetic, customers=150, orders=300, payments=312, shipments=280, refunds_returns=69, snapshots=300 |
+| `run_a3bacc557771` | `sut_run_v1` | `completed` | model_version=v1, bitext_queries=400, hard_queries=100, natural_inserted=500, errors=0, controlled_injected=50 |
+| `run_351662ac5230` | `clean_run` | `completed` | records_in=550, records_out=550, valid_count=550, rejected_count=0, pii_replacements=0, dup_groups=507, dup_share=0.0782, throughput_per_min=360090.9 |
+| `run_c42e06cbdd8e` | `embed_run` | `completed` | model_name=all-MiniLM-L6-v2, queries_processed=550, responses_processed=550, rows_inserted=1100, cache_hits=0, cache_misses=1100, cache_hit_rate=0.0, seconds_pe |
+| `run_6e113afd9456` | `cluster_run` | `completed` | clustering_run_id=clrun_2afcf641328d, representatives_clustered=458, duplicates_propagated=42, best_min_cluster_size=5, best_min_samples=3, n_clusters=40, noise |
+| `run_2b7737f4730f` | `priority_run` | `completed` | clustering_run_id=clrun_2afcf641328d, scored_count=500, min_score=0.096, mean_score=0.275, max_score=0.7191, population_size=500, sampled_total=300, random_cont |
+| `run_d8cf8e7dd005` | `judge_run` | `completed` | total_targets=350, judged_new=350, cache_hits=0, judge_errors=0, abstentions=0, failures_detected=126, judge_model=llama3.1:8b, judge_version=j1.3, prompt_hash= |
+| `run_5342601120f3` | `calibrate_import` | `completed` | dev_imported=40, test_imported=60, double_annotated=50 |
+| `run_34bc53aba5b6` | `label_run` | `completed` | labeled_count=350, failures_count=126, needs_human_review_count=60 |
+| `run_bcf5cc00f68f` | `testcases_generate` | `completed` | candidates_considered=220, duplicates_merged=0, test_cases_created=220, approved_silver=176, pending_candidate=44, variants_created=10 |
+| `run_64dfc1598cc3` | `release_create_v1.0` | `completed` | release_id=v1.0, content_hash=696b48ffd66a6728bd5957d0e66dcd1be3535665adc14a971bc6236b7a6f1b31, judge_version=j1.3, total_cases=176 |
+| `run_faed398ca4ed` | `eval_replay_v1.0_v1` | `completed` | release_id=v1.0, model_id=v1, judge_version=j1.3, total_release_items=176, evaluated_new=176, passed_new=105, pass_rate_new=0.5966 |
+| `run_321b8a17ba34` | `eval_replay_v1.0_v2` | `completed` | release_id=v1.0, model_id=v2, judge_version=j1.3, total_release_items=176, evaluated_new=176, passed_new=157, pass_rate_new=0.892 |
+| `run_0173c6c87938` | `eval_compare_v1.0_v1_vs_v2` | `completed` | n_shared_cases=176, flagged_regressions_count=0 |
 
 ## 2. Embedding Model Comparison
 
@@ -36,12 +36,12 @@ Evaluated on `458` representative queries:
 
 | Model | Within-Intent Recall@5 | Seconds / 1k Texts |
 |---|---|---|
-| `all-MiniLM-L6-v2` | 0.9760 | 0.023 |
-| `BAAI/bge-small-en-v1.5` | 0.9760 | 0.025 |
+| `all-MiniLM-L6-v2` | 0.9760 | 0.027 |
+| `BAAI/bge-small-en-v1.5` | 0.9760 | 0.030 |
 
 ## 3. Clustering Quality
 
-- **Clustering Run ID**: `clrun_3682af22c035`
+- **Clustering Run ID**: `clrun_2afcf641328d`
 - **Clusters Discovered**: 40
 - **Noise Share**: 8.30%
 - **DBCV (relative_validity)**: 0.5354

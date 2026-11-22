@@ -105,7 +105,7 @@ priority:
 judge:
   provider: "ollama"
   model_name: "llama3.1:8b"
-  judge_version: "j1.3"  # j1.1 taxonomy names, j1.2 claim checks + scores, j1.3 num_ctx + reference label
+  judge_version: "j1.4"  # j1.1 taxonomy names, j1.2 claim checks + scores, j1.3 num_ctx + reference label, j1.4 real ids are not hallucinations
   temperature: 0.0
   max_retries: 3
   top_k_policies: 3

@@ -64,6 +64,11 @@ def is_concrete_unverified_claim(check: ClaimCheckResult) -> bool:
     """True for a not_in_evidence claim of a specific-fact type that carries a concrete value."""
     if check.status != "not_in_evidence" or check.claim_type not in _HALLUCINATION_CLAIM_TYPES:
         return False
+    if check.unverified_values is not None:
+        # A real order id, shipment id, date or amount from the evidence is not invented
+        return bool(check.unverified_values) or (
+            check.claimed_value == "loyalty_voucher"
+        )
     text = f"{check.claimed_value or ''} {check.claim_text}"
     return _CONCRETE_VALUE_RE.search(text) is not None
 

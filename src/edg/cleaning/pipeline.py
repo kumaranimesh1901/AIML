@@ -14,7 +14,7 @@ from edg.cleaning.cleaner import clean_text
 from edg.cleaning.dedupe import assign_duplicate_groups
 from edg.cleaning.pii import PIIPseudonymizer, persist_pii_mappings
 from edg.config import AppConfig
-from edg.db.models import InteractionClean, InteractionRaw
+from edg.db.models import InteractionClean, InteractionRaw, StateSnapshot
 from edg.ingestion.ingest import validate_raw_row
 from edg.logging import get_logger
 from edg.sut.failure_injector import CONTROLLED_SOURCE_TAG
@@ -61,6 +61,11 @@ def run_cleaning_pipeline(
         return counts
 
     pseudonymizer = PIIPseudonymizer(use_spacy=use_spacy)
+    snap_ids = {r.snapshot_id for r in new_rows if r.snapshot_id}
+    snapshots = {
+        s.snapshot_id: s.snapshot_json
+        for s in session.scalars(select(StateSnapshot).where(StateSnapshot.snapshot_id.in_(snap_ids))).all()
+    } if snap_ids else {}
 
     valid_staging: list[tuple[InteractionRaw, str, str, str | None]] = []
     reject_reasons: dict[str, int] = {}
@@ -92,8 +97,10 @@ def run_cleaning_pipeline(
         c_query = clean_text(row.user_query)
         c_response = clean_text(row.ai_response)
 
-        p_query, q_recs = pseudonymizer.pseudonymize(c_query)
-        p_response, r_recs = pseudonymizer.pseudonymize(c_response)
+        snap = snapshots.get(row.snapshot_id) if row.snapshot_id else None
+        titles = [str(it.get("title", "")) for it in ((snap or {}).get("items") or [])]
+        p_query, q_recs = pseudonymizer.pseudonymize(c_query, protected_phrases=titles)
+        p_response, r_recs = pseudonymizer.pseudonymize(c_response, protected_phrases=titles)
         all_pii = [*q_recs, *r_recs]
 
         pii_ref: str | None = None

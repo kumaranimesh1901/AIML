@@ -102,7 +102,7 @@ priority:
 judge:
   provider: ollama
   model_name: llama3.1:8b
-  judge_version: j1.3
+  judge_version: j1.4
   temperature: 0.0
   max_retries: 3
   top_k_policies: 3

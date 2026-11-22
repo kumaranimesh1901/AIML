@@ -42,6 +42,9 @@ class ClaimCheckResult(BaseModel):
     status: ClaimCheckStatus
     evidence_detail: str
     claimed_value: str | None = None
+    # Concrete values (dates, amounts, record ids) in the claim that the snapshot and policies do
+    # not contain. None = not computed (older judgements); [] = every concrete value checks out.
+    unverified_values: list[str] | None = None
 
 
 class DimensionAssessment(BaseModel):

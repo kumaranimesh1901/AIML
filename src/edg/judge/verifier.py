@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -105,6 +106,41 @@ def text_mentions_status(text: str, status: str) -> bool:
     """True if `text` names the status code ("out_for_delivery" also matches "out for delivery")."""
     spaced = re.sub(r"[\s_\-]+", " ", text.lower())
     return re.search(rf"\b{re.escape(status.replace('_', ' '))}\b", spaced) is not None
+
+
+_RECORD_ID_RE = re.compile(r"\b(?:TRK|SHP|ORD|PAY|RET|CUST|PROD)-[A-Z0-9-]*[0-9][A-Z0-9-]*", re.IGNORECASE)
+_MONEY_RE = re.compile(r"\$\s?(\d+(?:,\d{3})*(?:\.\d{1,2})?)|\b(\d+(?:\.\d{1,2})?)\s?(?:usd|dollars)\b", re.IGNORECASE)
+
+
+def _snapshot_record_ids(snapshot_json: dict[str, Any]) -> set[str]:
+    """Every record id (order, shipment, payment, return, customer, product) in the snapshot."""
+    return {m.group(0).upper() for m in _RECORD_ID_RE.finditer(json.dumps(snapshot_json, default=str))}
+
+
+def unverified_concrete_values(
+    text: str,
+    *,
+    record_ids: set[str],
+    valid_dates: set[str],
+    valid_amounts: list[float],
+    policy_numbers: set[float],
+) -> list[str]:
+    """Concrete dates, money amounts and record ids in `text` that the evidence does not contain."""
+    missing: list[str] = []
+    for m in _RECORD_ID_RE.finditer(text):
+        if m.group(0).upper() not in record_ids:
+            missing.append(m.group(0))
+    for m in _MONEY_RE.finditer(text):
+        num = float((m.group(1) or m.group(2)).replace(",", ""))
+        known = any(abs(num - a) <= 0.01 for a in valid_amounts) or num in policy_numbers or num in (50.0, 200.0)
+        if not known:
+            missing.append(m.group(0))
+    for y, mo, d in find_dates(text):
+        if not any(
+            int(v[5:7]) == mo and int(v[8:10]) == d and (y is None or int(v[:4]) == y) for v in valid_dates
+        ):
+            missing.append(f"{y or '????'}-{mo:02d}-{d:02d}")
+    return list(dict.fromkeys(missing))
 
 
 def _date_matches(value: str, valid_dates: set[str]) -> bool:
@@ -475,7 +511,16 @@ def verify_claims(
                 )
             )
 
-    # Carry the claimed value so downstream rules can tell concrete from generic claims
+    # Carry the claimed value, and which of its concrete values the evidence lacks, so the
+    # hallucination rule can tell an invented value from a real order id, date or amount
+    record_ids = _snapshot_record_ids(snapshot_json)
     for claim, res in zip(claims, results, strict=True):
         res.claimed_value = claim.claimed_value
+        res.unverified_values = unverified_concrete_values(
+            f"{claim.claimed_value or ''} {claim.claim_text}",
+            record_ids=record_ids,
+            valid_dates=valid_dates,
+            valid_amounts=valid_amounts,
+            policy_numbers=policy_numbers,
+        )
     return results

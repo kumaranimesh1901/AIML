@@ -154,7 +154,7 @@ class JudgeConfig(BaseModel):
 
     provider: Literal["ollama", "openai_compatible", "fake"] = "ollama"
     model_name: str = "llama3.1:8b"
-    judge_version: str = "j1.3"
+    judge_version: str = "j1.4"
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     max_retries: int = Field(default=3, ge=0)
     top_k_policies: int = Field(default=3, ge=1)

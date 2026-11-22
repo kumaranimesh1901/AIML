@@ -36,6 +36,10 @@ _PROTECTED_ID_RE = re.compile(
 )
 
 
+# Store, carrier and brand-like words spaCy may tag as PERSON in support replies
+_STORE_WORDS = frozenset({"novamart", "ups", "fedex", "dhl", "usps", "customer", "dear customer"})
+
+
 def _make_token(entity_type: str, value: str) -> tuple[str, str]:
     normalized = value.strip().lower()
     digest = hashlib.sha256(f"{entity_type}:{normalized}".encode()).hexdigest()
@@ -56,8 +60,15 @@ class PIIPseudonymizer:
             except Exception:
                 self._nlp = None
 
-    def pseudonymize(self, text: str) -> tuple[str, list[dict[str, str]]]:
-        """Replace PII spans with deterministic tokens while preserving store/order IDs."""
+    def pseudonymize(
+        self, text: str, *, protected_phrases: list[str] | None = None
+    ) -> tuple[str, list[dict[str, str]]]:
+        """Replace PII spans with deterministic tokens while preserving store/order IDs.
+
+        `protected_phrases` (e.g. the bound order's product titles) are never masked as person
+        names: spaCy tags parts of titles such as "MX Master 3S Wireless Mouse" as PERSON.
+        """
+        protected_low = [p.lower() for p in (protected_phrases or []) if p]
         records: list[dict[str, str]] = []
         result = text
 
@@ -86,6 +97,8 @@ class PIIPseudonymizer:
             for ent in sorted(spans, key=lambda e: e.start_char, reverse=True):
                 raw_val = ent.text.strip()
                 if not raw_val or raw_val.startswith("<") or _PROTECTED_ID_RE.search(raw_val):
+                    continue
+                if raw_val.lower() in _STORE_WORDS or any(raw_val.lower() in p for p in protected_low):
                     continue
                 token, orig_hash = _make_token("PERSON", raw_val)
                 records.append(

@@ -189,3 +189,19 @@ def test_judge_probe_rejudges_a_sample_without_writing(small_pipeline_db: str) -
     assert "controlled_recall" in rep["summary"]
     for item in rep["items"]:
         assert set(item) >= {"failure_types", "failure_types_from_llm", "added_by_code_rules", "explanation"}
+
+
+def test_product_titles_are_not_masked_as_person_names() -> None:
+    pytest.importorskip("spacy")
+    from edg.cleaning.pii import PIIPseudonymizer
+
+    try:
+        p = PIIPseudonymizer(use_spacy=True)
+    except Exception:  # pragma: no cover
+        pytest.skip("spaCy model unavailable")
+    if p._nlp is None:
+        pytest.skip("spaCy model unavailable")
+    text = "Your Logitech MX Master 3S Wireless Mouse is out for delivery with FedEx today. Best regards, Alex Johnson"
+    out, _ = p.pseudonymize(text, protected_phrases=["Logitech MX Master 3S Wireless Mouse"])
+    assert "Logitech MX Master 3S Wireless Mouse" in out
+    assert "Alex Johnson" not in out
