@@ -167,3 +167,25 @@ def test_replay_judge_error_is_excluded_from_model_comparison() -> None:
     tc = SimpleNamespace(intent="track_order")
     flags = _extract_metric_flags(er, jdg, tc, [], load_taxonomy())  # type: ignore[arg-type]
     assert flags and all(v is None for v in flags.values()), flags
+
+
+def test_judge_probe_rejudges_a_sample_without_writing(small_pipeline_db: str) -> None:
+    from sqlalchemy import func
+
+    from edg.config import load_config
+    from edg.db.models import Judgement
+    from edg.db.session import create_db_engine
+    from edg.judge.probe import probe_judge
+
+    cfg = load_config(small=True, overrides={"database": {"url": small_pipeline_db}, "llm": {"provider": "fake"}})
+    engine = create_db_engine(small_pipeline_db)
+    with get_session(engine) as s:
+        before = s.scalar(select(func.count()).select_from(Judgement))
+        rep = probe_judge(s, cfg, n=5, stratum="controlled")
+        s.rollback()
+    with get_session(engine) as s:
+        assert s.scalar(select(func.count()).select_from(Judgement)) == before
+    assert rep["summary"]["n"] == 5
+    assert "controlled_recall" in rep["summary"]
+    for item in rep["items"]:
+        assert set(item) >= {"failure_types", "failure_types_from_llm", "added_by_code_rules", "explanation"}

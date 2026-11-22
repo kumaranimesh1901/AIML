@@ -370,6 +370,44 @@ def judge_run(
     typer.echo(json.dumps(counts, indent=2))
 
 
+@judge_app.command("probe")
+def judge_probe(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Path to YAML config."),
+    small: bool = typer.Option(False, "--small", help="Use the small development config profile."),
+    database_url: str | None = typer.Option(None, "--db-url", help="Override database URL."),
+    n: int = typer.Option(15, "--n", help="Number of interactions to re-judge."),
+    stratum: str = typer.Option(
+        "random_control", "--stratum", help="random_control, priority, cluster, or controlled."
+    ),
+    judge_model: str | None = typer.Option(None, "--judge-model", help="Try another judge model."),
+    out: Path | None = typer.Option(None, "--out", help="Also write the full JSON report here."),
+) -> None:
+    """Re-judge a few logged interactions of an existing DB in minutes; writes nothing to the DB."""
+    from edg.judge.probe import probe_judge
+
+    overrides: dict[str, object] = {}
+    if database_url:
+        overrides["database"] = {"url": database_url}
+    cfg = load_config(config_path, small=small, overrides=overrides or None)
+    setup_logging(cfg.logging)
+    engine = init_db(cfg.database.url, use_alembic=True, echo=cfg.database.echo)
+    with get_session(engine) as session:
+        report = probe_judge(session, cfg, n=n, stratum=stratum, judge_model=judge_model)
+        session.rollback()
+    for item in report["items"]:
+        typer.echo(
+            f"\n--- {item['interaction_id']} injected={item['injected_failure']}\n"
+            f"Q: {item['query']}\nA: {item['response']}\n"
+            f"verdicts: {item['verdicts']}\n"
+            f"failures: {item['failure_types']} (LLM said {item['failure_types_from_llm']}, "
+            f"code rules added {item['added_by_code_rules']})\n"
+            f"claim checks: {item['claim_checks']}\nwhy: {item['explanation']}"
+        )
+    typer.echo("\nSUMMARY " + json.dumps(report["summary"], indent=2))
+    if out is not None:
+        out.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+
 @calibrate_app.command("export")
 def calibrate_export(
     config_path: Path | None = typer.Option(None, "--config", "-c", help="Path to YAML config."),
