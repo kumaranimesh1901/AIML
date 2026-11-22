@@ -18,6 +18,14 @@ from edg.annotation.agreement import (
     freeze_judge_version,
 )
 from edg.annotation.export import export_annotation_sheets
+from edg.annotation.human_check import (
+    HumanCheckError,
+    export_human_check_sheet,
+    render_human_check_markdown,
+    save_report,
+    score_human_check,
+    write_human_check_section,
+)
 from edg.annotation.import_ import import_annotations_csv
 from edg.benchmark.releases import ReleaseImmutabilityError, create_benchmark_release
 from edg.cleaning.pipeline import run_cleaning_pipeline
@@ -444,6 +452,63 @@ def calibrate_import(
             stats = import_annotations_csv(session, csv_path, run_id=run.run_id)
             counts.update(stats)
     typer.echo(json.dumps(stats, indent=2))
+
+
+@calibrate_app.command("human-export")
+def calibrate_human_export(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Path to YAML config."),
+    small: bool = typer.Option(False, "--small", help="Use the small development config profile."),
+    database_url: str | None = typer.Option(None, "--db-url", help="Override database URL."),
+    out: Path = typer.Option(
+        Path("data/annotations/human_check.csv"), "--out", help="Where to write the blank sheet."
+    ),
+    n: int = typer.Option(50, "--n", help="Number of judged answers to put in the sheet."),
+) -> None:
+    """Export a blind pass/fail sheet of judged answers for two real human annotators."""
+    overrides = {"database": {"url": database_url}} if database_url else None
+    cfg = load_config(config_path, small=small, overrides=overrides)
+    setup_logging(cfg.logging)
+    engine = create_db_engine(cfg.database.url, echo=cfg.database.echo)
+    try:
+        with get_session(engine) as session:
+            stats = export_human_check_sheet(session, cfg, output_path=out, n=n)
+    except HumanCheckError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(stats, indent=2))
+
+
+@calibrate_app.command("human-import")
+def calibrate_human_import(
+    sheets: list[Path] = typer.Argument(..., help="Filled sheet(s); several copies are merged by interaction_id."),
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Path to YAML config."),
+    small: bool = typer.Option(False, "--small", help="Use the small development config profile."),
+    database_url: str | None = typer.Option(None, "--db-url", help="Override database URL."),
+    summary_out: Path = typer.Option(
+        Path("data/exports/results_summary.md"), "--summary-out", help="Summary to add the section to."
+    ),
+    report_out: Path = typer.Option(
+        Path("data/exports/human_agreement"), "--report-out", help="Path stem for the .json and .md copies."
+    ),
+) -> None:
+    """Score filled human sheets: real judge-vs-human Cohen's kappa, written into the summary."""
+    overrides = {"database": {"url": database_url}} if database_url else None
+    cfg = load_config(config_path, small=small, overrides=overrides)
+    setup_logging(cfg.logging)
+    engine = create_db_engine(cfg.database.url, echo=cfg.database.echo)
+    try:
+        with get_session(engine) as session:
+            report = score_human_check(session, cfg, list(sheets))
+    except (HumanCheckError, FileNotFoundError) as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    section = render_human_check_markdown(report)
+    json_path = save_report(report, report_out.with_suffix(".json"))
+    md_path = report_out.with_suffix(".md")
+    md_path.write_text(section, encoding="utf-8")
+    summary = write_human_check_section(summary_out, section)
+    typer.echo(section)
+    typer.echo(f"Wrote {json_path}, {md_path} and the section in {summary}")
 
 
 @calibrate_app.command("dev-eval")
