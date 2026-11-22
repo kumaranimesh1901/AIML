@@ -52,6 +52,7 @@ queries:
 sut:
   max_tool_calls: 4
   failure_injection_rate: 0.10
+  failure_injection_mode: template
   versions:
     v1:
       name: "v1"
@@ -104,11 +105,12 @@ priority:
 
 judge:
   provider: "ollama"
-  model_name: "llama3.1:8b"
-  judge_version: "j1.4"  # j1.1 taxonomy names, j1.2 claim checks + scores, j1.3 num_ctx + reference label, j1.4 real ids are not hallucinations
+  model_name: "qwen2.5:14b"
+  judge_version: "j1.5"  # j1.1 taxonomy names, j1.2 claim checks, j1.3 num_ctx, j1.4 real ids, j1.5 qwen2.5:14b + verdicts win
   temperature: 0.0
   max_retries: 3
   top_k_policies: 3
+  labels_require_failing_verdict: true
   low_confidence_threshold: 0.70
   dev_annotation_size: 150
   test_annotation_size: 250

@@ -95,7 +95,7 @@ def test_calibration_pairs_only_source_judgements_after_replay(small_pipeline_db
             }
             paired = {
                 p["interaction_id"]: p
-                for p in _pair_annotations_with_judgements(session, split="judge_test", judge_version="j1.4")
+                for p in _pair_annotations_with_judgements(session, split="judge_test", judge_version="j1.5")
             }
             for iid in overlap:
                 src = source_by_iid[iid]

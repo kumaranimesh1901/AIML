@@ -73,15 +73,41 @@ def is_concrete_unverified_claim(check: ClaimCheckResult) -> bool:
     return _CONCRETE_VALUE_RE.search(text) is not None
 
 
+# Which dimension verdicts back each LLM failure label (Deepal's decision: verdicts win).
+_LABEL_REQUIRES: dict[str, tuple[str, frozenset[str]]] = {
+    "incomplete_response": ("completeness", frozenset({"fail"})),
+    "irrelevant_response": ("relevance", frozenset({"fail"})),
+    "misunderstood_intent": ("relevance", frozenset({"fail", "partial"})),
+    "inadequate_resolution": ("helpfulness", frozenset({"fail"})),
+    "factual_error": ("correctness", frozenset({"fail"})),
+    "hallucination": ("correctness", frozenset({"fail", "partial"})),
+    "contradictory_information": ("correctness", frozenset({"fail", "partial"})),
+    "policy_violation": ("correctness", frozenset({"fail", "partial"})),
+    "unsafe_response": ("safety", frozenset({"fail"})),
+}
+
+
+def _label_backed_by_verdict(label: str, output: LLMJudgeOutput) -> bool:
+    need = _LABEL_REQUIRES.get(label)
+    if need is None:
+        return True
+    dim, verdicts = need
+    return getattr(output, dim).verdict in verdicts
+
+
 def enforce_code_rules(
     output: LLMJudgeOutput,
     *,
     evidence_status: str,
     claim_checks: list[ClaimCheckResult],
+    labels_require_failing_verdict: bool = False,
 ) -> LLMJudgeOutput:
     """Enforce non-negotiable evidence and claim-verification rules in code."""
     updated = output.model_copy(deep=True)
     failures = list(dict.fromkeys(updated.failure_types))
+    if labels_require_failing_verdict:
+        # Rule 0: an LLM label the judge's own verdict does not support is dropped
+        failures = [f for f in failures if _label_backed_by_verdict(f, updated)]
 
     # Rule 1: Missing evidence -> correctness MUST be not_assessable (abstain)
     if evidence_status == "missing":
@@ -382,6 +408,7 @@ class HybridJudge:
                 parsed_output,
                 evidence_status=evidence.evidence_status,
                 claim_checks=claim_checks,
+                labels_require_failing_verdict=self.config.judge.labels_require_failing_verdict,
             )
             judgement = Judgement(
                 judgement_id=f"JDG-{uuid.uuid4().hex[:12]}",

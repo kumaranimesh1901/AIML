@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -123,6 +124,24 @@ _STYLE_TEMPLATES: dict[str, dict[HardQueryStyle, str]] = {
 }
 
 
+_SQL_RE = re.compile(r"^\s*(?:select|insert|update|delete|with)\b|\bfrom\s+orders\b|\bwhere\s+\w+\s*=", re.IGNORECASE)
+# Phrases only the support agent would write, never the customer
+_AGENT_VOICE_RE = re.compile(
+    r"\byour (?:return|refund|order|request|package|item)s?\b.*\b(?:has|have) been\b"
+    r"|\b(?:we|i)(?:'m| am)? (?:writing to )?(?:express|apologi[sz]e)|\bour (?:delay|apologies)\b"
+    r"|\bdear customer\b|\bthank you for contacting\b|\bwe (?:truly )?value your business\b",
+    re.IGNORECASE,
+)
+
+
+def is_plausible_customer_query(text: str) -> bool:
+    """Reject generated "customer" messages that are SQL or written in the agent's voice."""
+    t = text.strip()
+    if len(t) < 8 or _SQL_RE.search(t) or _AGENT_VOICE_RE.search(t):
+        return False
+    return True
+
+
 class HardQueryOutput(BaseModel):
     query: str = Field(min_length=8)
 
@@ -163,6 +182,9 @@ def generate_hard_queries(
         query_text: str | None = None
         if use_live_llm and llm_client is not None:
             prompt = (
+                "You are role-playing a NovaMart CUSTOMER writing to customer support (not the agent). "
+                "Write the customer's own message in plain everyday language, first person, no code, "
+                "no SQL, no greeting from the company.\n"
                 f"Write one realistic customer-support message (1-2 sentences) for NovaMart order {order_id}.\n"
                 f"Situation: {tag.replace('_', ' ')}.\n"
                 f"Style: {style.replace('_', ' ')}.\n"
@@ -176,9 +198,15 @@ def generate_hard_queries(
                     temperature=0.7,
                 )
                 candidate = parsed.query.strip()
-                if order_id not in candidate:
-                    candidate = f"{candidate} (Order {order_id})"
-                query_text = candidate
+                if not is_plausible_customer_query(candidate):
+                    logger.warning(
+                        "hard_query_rejected",
+                        extra={"order_id": order_id, "tag": tag, "query": candidate[:120]},
+                    )
+                else:
+                    if order_id not in candidate:
+                        candidate = f"{candidate} (Order {order_id})"
+                    query_text = candidate
             except LLMError as exc:
                 logger.warning(
                     "hard_query_llm_fallback",

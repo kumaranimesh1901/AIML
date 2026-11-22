@@ -106,6 +106,9 @@ class SUTConfig(BaseModel):
 
     max_tool_calls: int = Field(default=4, ge=1, le=10)
     failure_injection_rate: float = Field(default=0.10, ge=0.0, le=1.0)
+    # template: each controlled failure is written from a fixed template that certainly contains
+    # it; llm: rewritten by llm.helper_model (often lacks the failure, e.g. refuses unsafe text)
+    failure_injection_mode: Literal["template", "llm"] = "template"
     versions: dict[str, SUTVersionConfig] = Field(default_factory=dict)
 
 
@@ -153,8 +156,11 @@ class JudgeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: Literal["ollama", "openai_compatible", "fake"] = "ollama"
-    model_name: str = "llama3.1:8b"
-    judge_version: str = "j1.4"
+    model_name: str = "qwen2.5:14b"
+    judge_version: str = "j1.5"
+    # Deepal's decision (2026-11-22): an LLM failure label counts only if its matching dimension
+    # verdict fails (e.g. incomplete_response needs completeness = fail). Code-rule labels always count.
+    labels_require_failing_verdict: bool = True
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     max_retries: int = Field(default=3, ge=0)
     top_k_policies: int = Field(default=3, ge=1)

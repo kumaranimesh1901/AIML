@@ -87,6 +87,7 @@ def inject_controlled_failures(
     seed: int = 42,
     llm_client: BaseLLMClient | None = None,
     rewrite_model: str | None = None,
+    mode: str = "template",
 ) -> dict[str, Any]:
     """Select a stratified share of natural-tier responses and inject exactly one failure type each."""
     taxonomy = load_taxonomy()
@@ -130,7 +131,9 @@ def inject_controlled_failures(
         rng.shuffle(remaining)
         selected.extend(remaining[: target_total - len(selected)])
 
-    use_live_llm = llm_client is not None and llm_client.provider != "fake"
+    # Deepal's decision (2026-11-22): templates by default, so every injected reply certainly
+    # contains the failure it is labelled with and controlled recall has a correct answer key
+    use_live_llm = mode == "llm" and llm_client is not None and llm_client.provider != "fake"
     snapshots_by_id = {
         s.snapshot_id: s.snapshot_json
         for s in session.scalars(
