@@ -43,6 +43,7 @@ from edg.llm.cache import LLMCache
 from edg.llm.client import create_llm_client
 from edg.logging import get_logger, setup_logging
 from edg.pipeline.orchestrator import run_full_pipeline
+from edg.pipeline.report import write_results_summary_markdown
 from edg.priority.sampler import run_priority_and_sampling
 from edg.sut.runner import run_sut_pipeline
 from edg.testcases.generator import run_testcase_generation
@@ -485,7 +486,7 @@ def calibrate_human_import(
     small: bool = typer.Option(False, "--small", help="Use the small development config profile."),
     database_url: str | None = typer.Option(None, "--db-url", help="Override database URL."),
     summary_out: Path = typer.Option(
-        Path("data/exports/results_summary.md"), "--summary-out", help="Summary to add the section to."
+        Path("data/exports/results_summary.md"), "--summary-out", help="Summary to add the section to (rebuilt from the DB if it does not exist)."
     ),
     report_out: Path = typer.Option(
         Path("data/exports/human_agreement"), "--report-out", help="Path stem for the .json and .md copies."
@@ -502,6 +503,10 @@ def calibrate_human_import(
     except (HumanCheckError, FileNotFoundError) as exc:
         typer.echo(f"ERROR: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+    if not summary_out.exists():
+        with get_session(engine) as session:
+            write_results_summary_markdown(session, cfg, output_path=summary_out)
+        typer.echo(f"{summary_out} did not exist; rebuilt it from {cfg.database.url}")
     section = render_human_check_markdown(report)
     json_path = save_report(report, report_out.with_suffix(".json"))
     md_path = report_out.with_suffix(".md")

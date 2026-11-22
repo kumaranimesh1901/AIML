@@ -159,3 +159,35 @@ def test_evidence_facts_are_readable() -> None:
     assert "Order: order_id=ORD-1, status=shipped, total_amount=89.99" in text
     assert "Shipment: shipment_id=SHP-1, carrier=UPS" in text and "actual_delivery" not in text
     assert "Return/refund: none" in text
+
+
+def test_import_rebuilds_a_missing_summary_from_the_db(small_pipeline_db: str, tmp_path: Path) -> None:
+    runner = CliRunner()
+    sheet = tmp_path / "h.csv"
+    args = ["--small", "--db-url", small_pipeline_db]
+    assert (
+        runner.invoke(app, ["calibrate", "human-export", *args, "--out", str(sheet), "--n", "12"]).exit_code
+        == 0
+    )
+    rows = _read(sheet)
+    for i, r in enumerate(rows):
+        r["annotator_1_verdict"] = "fail" if i % 3 else "pass"
+        r["annotator_2_verdict"] = "fail" if i % 4 else "pass"
+    _write(sheet, rows)
+    summary = tmp_path / "small_run_summary.md"
+    res = runner.invoke(
+        app,
+        [
+            "calibrate",
+            "human-import",
+            str(sheet),
+            *args,
+            "--summary-out",
+            str(summary),
+            "--report-out",
+            str(tmp_path / "h"),
+        ],
+    )
+    assert res.exit_code == 0, res.output
+    text = summary.read_text()
+    assert "## 5. Judge Validation" in text and text.count(SECTION_START) == 1
