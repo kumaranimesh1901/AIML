@@ -31,6 +31,7 @@ from edg.benchmark.releases import ReleaseImmutabilityError, create_benchmark_re
 from edg.cleaning.pipeline import run_cleaning_pipeline
 from edg.clustering.pipeline import run_clustering_pipeline
 from edg.config import load_config
+from edg.db.demo import DEMO_DB_PATH, make_snapshot, seed_from_demo
 from edg.db.repositories import track_run
 from edg.db.session import create_db_engine, get_session, init_db
 from edg.embeddings.embedder import compare_embedding_models, embed_interactions
@@ -100,15 +101,44 @@ def db_init(
     config_path: Path | None = typer.Option(None, "--config", "-c", help="Path to YAML config."),
     small: bool = typer.Option(False, "--small", help="Use the small development config profile."),
     database_url: str | None = typer.Option(None, "--db-url", help="Override database URL."),
+    empty: bool = typer.Option(
+        False, "--empty", help="Start an empty database instead of loading the bundled results."
+    ),
 ) -> None:
-    """Initialize all database tables via Alembic migrations."""
+    """Initialize all database tables via Alembic migrations.
+
+    On a fresh clone, the default database is first filled from the bundled results of a real
+    run (data/demo/edg_demo.db), so the dashboard opens with them. A database that already holds
+    data, or any --db-url, is never replaced; pass --empty to start a new run from scratch."""
     overrides = {"database": {"url": database_url}} if database_url else None
     cfg = load_config(config_path, small=small, overrides=overrides)
     setup_logging(cfg.logging)
+    if not empty and seed_from_demo(cfg.database.url):
+        typer.echo(f"Loaded the bundled results of a real run from {DEMO_DB_PATH} into {cfg.database.url}")
     engine = init_db(cfg.database.url, use_alembic=True, echo=cfg.database.echo)
     tables = sorted(inspect(engine).get_table_names())
     logger.info("db_initialized", extra={"database_url": cfg.database.url, "table_count": len(tables)})
     typer.echo(f"Initialized database ({len(tables)} tables): {', '.join(tables)}")
+
+
+@db_app.command("snapshot")
+def db_snapshot(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Path to YAML config."),
+    small: bool = typer.Option(False, "--small", help="Use the small development config profile."),
+    database_url: str | None = typer.Option(None, "--db-url", help="Override database URL."),
+) -> None:
+    """Save this run's results to data/demo/edg_demo.db so they can be committed and shared."""
+    overrides = {"database": {"url": database_url}} if database_url else None
+    cfg = load_config(config_path, small=small, overrides=overrides)
+    try:
+        out = make_snapshot(cfg.database.url)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    size_mb = out.stat().st_size / 1_000_000
+    typer.echo(f"Saved {out} ({size_mb:.1f} MB). Commit it with: git add -f {out} data/demo")
+    if size_mb > 95:
+        typer.echo("Warning: GitHub rejects files over 100 MB.", err=True)
 
 
 @db_app.command("status")
