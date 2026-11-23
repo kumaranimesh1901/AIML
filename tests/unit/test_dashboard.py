@@ -1,4 +1,4 @@
-"""Phase 10 acceptance tests: Streamlit AppTest on all 7 pages + grep check for zero literal metrics."""
+"""Phase 10 acceptance tests: Streamlit AppTest on all 8 pages + grep check for zero literal metrics."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ PAGE_FILES = [
     DASHBOARD_DIR / "pages" / "5_Judge.py",
     DASHBOARD_DIR / "pages" / "6_Dataset.py",
     DASHBOARD_DIR / "pages" / "7_Model_Comparison.py",
+    DASHBOARD_DIR / "pages" / "8_Chat_Assistant.py",
 ]
 
 # Patterns that would indicate hardcoded/literal metric numbers in dashboard code

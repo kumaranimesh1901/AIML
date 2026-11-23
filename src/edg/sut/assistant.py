@@ -205,7 +205,17 @@ class CustomerSupportAssistant:
         self.llm_client = llm_client
         self.max_tool_calls = max_tool_calls
 
-    def answer(self, *, query: str, order_id: str, toolbox: SnapshotToolBox) -> AssistantResult:
+    def answer(
+        self,
+        *,
+        query: str,
+        order_id: str,
+        toolbox: SnapshotToolBox,
+        history: list[tuple[str, str]] | None = None,
+    ) -> AssistantResult:
+        """Answer one customer message. `history` holds earlier (customer, assistant) turns of a
+        live chat; the pipeline never passes it, so pipeline prompts (and their cache keys) stay
+        exactly as before."""
         start = time.perf_counter()
 
         # Fast deterministic path for FakeLLMClient when no custom handler/responses are scripted
@@ -232,7 +242,13 @@ class CustomerSupportAssistant:
             f"{self.version_config.system_prompt}\n\n"
             + _TOOL_INSTRUCTIONS.format(max_calls=self.max_tool_calls)
         )
-        transcript_parts = [f"Customer query (Order {order_id}): {query}"]
+        transcript_parts: list[str] = []
+        if history:
+            earlier = "\n".join(
+                f"Customer: {user_msg}\nAssistant: {bot_msg}" for user_msg, bot_msg in history
+            )
+            transcript_parts.append(f"Earlier conversation (Order {order_id}):\n{earlier}")
+        transcript_parts.append(f"Customer query (Order {order_id}): {query}")
 
         final_answer: str | None = None
         error_msg: str | None = None
