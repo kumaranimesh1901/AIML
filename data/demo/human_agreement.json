@@ -1,0 +1,76 @@
+{
+  "source": "real_human_annotation",
+  "generated_at": "2026-11-23T12:48:38+00:00",
+  "judge_version": "j1.5",
+  "judge_model": "qwen2.5:14b",
+  "sheets": [
+    "data/annotations/human_check_A.csv",
+    "data/annotations/human_check_B.csv"
+  ],
+  "items_in_sheet": 50,
+  "items_not_in_db": 14,
+  "filled_by": {
+    "annotator_1": 36,
+    "annotator_2": 36
+  },
+  "pairs": {
+    "judge_vs_annotator_1": {
+      "n": 36,
+      "kappa": 0.0,
+      "ci95": [
+        -0.2295,
+        0.2258
+      ],
+      "raw_agreement": 0.4167,
+      "both_fail": 9,
+      "judge_fail_human_pass": 18,
+      "judge_pass_human_fail": 3,
+      "both_pass": 6,
+      "judge_fail_precision": 0.3333,
+      "judge_fail_recall": 0.75
+    },
+    "judge_vs_annotator_2": {
+      "n": 36,
+      "kappa": -0.1818,
+      "ci95": [
+        -0.2966,
+        -0.0511
+      ],
+      "raw_agreement": 0.6389,
+      "both_fail": 23,
+      "judge_fail_human_pass": 4,
+      "judge_pass_human_fail": 9,
+      "both_pass": 0,
+      "judge_fail_precision": 0.8519,
+      "judge_fail_recall": 0.7188
+    },
+    "annotator_1_vs_annotator_2": {
+      "n": 36,
+      "kappa": 0.1176,
+      "ci95": [
+        0.0217,
+        0.2558
+      ],
+      "raw_agreement": 0.4444
+    },
+    "judge_vs_human_consensus": {
+      "n": 16,
+      "kappa": -0.2727,
+      "ci95": [
+        -0.4667,
+        0.0
+      ],
+      "raw_agreement": 0.5625,
+      "both_fail": 9,
+      "judge_fail_human_pass": 4,
+      "judge_pass_human_fail": 3,
+      "both_pass": 0,
+      "judge_fail_precision": 0.6923,
+      "judge_fail_recall": 0.75,
+      "items_where_annotators_disagree": 20
+    }
+  },
+  "judge_fail_rate_on_sheet": 0.75,
+  "annotator_1_fail_rate": 0.3333,
+  "annotator_2_fail_rate": 0.8889
+}
