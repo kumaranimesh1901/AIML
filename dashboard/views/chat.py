@@ -1,8 +1,10 @@
-"""Chat Assistant: chat with the NovaMart support assistant (the SUT) on a real local Ollama model.
+"""Chat Assistant: the customer-facing chatbot, with feedback and escalation to support.
 
 The assistant answers with the same tool-calling loop the pipeline uses, bound to one order's
-state snapshot, and each reply can be graded live by the frozen hybrid judge. Nothing from this
-page is written to the database.
+state snapshot, on a real local Ollama model. Every turn is stored (chat_turns). Two separate
+signals follow each answer: the AI judge's check (technical correctness) and the customer's
+"Are you satisfied?" feedback. Either can escalate the turn to a support executive, whose
+corrected answer then appears in this chat.
 """
 
 from __future__ import annotations
@@ -14,22 +16,23 @@ _DASH_DIR = str(Path(__file__).resolve().parents[1])
 if _DASH_DIR not in sys.path:
     sys.path.insert(0, _DASH_DIR)
 
-import pandas as pd
 import streamlit as st
 from db_helper import get_database_url, get_engine
+from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
-from ui import kpi, page_header
+from ui import kpi, load_or_wait, page_header
 
 from edg.config import load_config
+from edg.db.models import ChatTurn, SupportTicket
 from edg.db.session import get_session
-from edg.judge.schema import DIMENSIONS
 from edg.llm.client import LLMError
+from edg.support import SupportError, evaluate_turn, record_feedback, record_turn
+from edg.support.service import ensure_support_tables, new_conversation_id
 from edg.sut.chat import (
     ChatUnavailableError,
     chat_reply,
     count_snapshots,
     find_order_ids,
-    grade_reply,
     list_order_choices,
     load_order_snapshot,
     load_policies,
@@ -53,12 +56,22 @@ GENERIC_EXAMPLES = ["Where is my order and when will it arrive?", "Can I return 
 
 page_header(
     "Chat Assistant",
-    "Ask the NovaMart support chatbot a customer question about an order. It looks the order up with "
-    "its tools and answers on a real local Ollama model. Chats are not saved.",
+    "Ask the NovaMart support chatbot a question about an order. After each answer, tell us if it "
+    "solved your problem; if not, a support executive takes over. Chats are saved for support and "
+    "quality review.",
 )
 
 config = load_config()
 engine = get_engine()
+
+
+@st.cache_resource(show_spinner=False)
+def _schema_ready(database_url: str) -> bool:
+    ensure_support_tables(get_engine())
+    return True
+
+
+load_or_wait(lambda: _schema_ready(get_database_url()))
 
 
 @st.cache_resource(show_spinner=False)
@@ -134,12 +147,15 @@ with st.sidebar:
         format_func=lambda o: f"{o}  ({', '.join(tags_by_order.get(o) or []) or 'normal'})",
     )
     auto_grade = st.toggle(
-        f"Grade each reply with the judge ({config.judge.model_name})",
-        value=False,
-        help="Slower: the judge checks the reply against the order snapshot and store policies.",
+        f"AI quality check on every answer ({config.judge.model_name})",
+        value=True,
+        help="The judge checks each answer against the order record and store policies. A serious "
+        "problem escalates the answer to a support executive even if the customer is satisfied. "
+        "Adds about a minute per answer.",
     )
     if st.button("New chat", icon=":material/refresh:", use_container_width=True):
         st.session_state["chat_messages"] = []
+        st.session_state["conversation_id"] = new_conversation_id()
         for key in [k for k in st.session_state if str(k).startswith("examples_")]:
             del st.session_state[key]
 
@@ -169,8 +185,10 @@ chat_key = (order_id, version_name)
 if st.session_state.get("chat_key") != chat_key:
     st.session_state["chat_key"] = chat_key
     st.session_state["chat_messages"] = []
+    st.session_state["conversation_id"] = new_conversation_id()
     st.session_state.pop(f"examples_{order_id}", None)
 messages: list[dict] = st.session_state.setdefault("chat_messages", [])
+conversation_id: str = st.session_state.setdefault("conversation_id", new_conversation_id())
 
 summary = summarize_snapshot(snapshot.snapshot_json)
 c1, c2, c3, c4 = st.columns(4)
@@ -182,31 +200,87 @@ with st.expander("What the chatbot can see for this order"):
     st.json(snapshot.snapshot_json, expanded=1)
 
 
-def _render_grade(jdg) -> None:  # noqa: ANN001
-    if "judge_error" in (jdg.failure_types or []):
-        st.warning(jdg.explanation)
+def _load_conversation() -> tuple[dict[str, ChatTurn], dict[str, SupportTicket]]:
+    """This conversation's stored turns and tickets, read fresh so support replies show up."""
+    with get_session(engine) as session:
+        turns = session.scalars(select(ChatTurn).where(ChatTurn.conversation_id == conversation_id)).all()
+        tickets = session.scalars(
+            select(SupportTicket).where(SupportTicket.conversation_id == conversation_id)
+        ).all()
+    return {t.turn_id: t for t in turns}, {t.turn_id: t for t in tickets}
+
+
+def _evaluate(turn_id: str) -> None:
+    with st.spinner(f"AI quality check: {config.judge.model_name} is checking the answer against the order record..."):
+        try:
+            evaluate_turn(engine, config, turn_id, policies=policies)
+        except (ChatUnavailableError, LLMError, SupportError) as exc:
+            st.error(f"The quality check failed: {exc}")
+
+
+def _render_ai_check(turn: ChatTurn | None, turn_id: str) -> None:
+    if turn is None or turn.eval_status == "pending":
+        if st.button("Run AI quality check", key=f"eval_{turn_id}", icon=":material/fact_check:"):
+            _evaluate(turn_id)
+            st.rerun()
         return
-    failed = [d for d in DIMENSIONS if getattr(jdg, f"{d}_verdict") == "fail"]
-    label = "Judge: pass" if not jdg.failure_types and not failed else "Judge: problems found"
-    with st.expander(f"{label} · confidence {jdg.confidence:.2f}", expanded=bool(jdg.failure_types)):
-        st.table(
-            pd.DataFrame(
-                [
-                    {
-                        "dimension": d,
-                        "verdict": getattr(jdg, f"{d}_verdict"),
-                        "score": getattr(jdg, f"{d}_score"),
-                    }
-                    for d in DIMENSIONS
-                ]
-            )
+    if turn.eval_status == "error":
+        st.caption(f":material/error: AI quality check could not decide: {turn.ai_explanation}")
+        return
+    if not turn.ai_failure_detected:
+        label = ":green[:material/verified: AI quality check passed]"
+    else:
+        label = f":red[:material/report: AI quality check found a {turn.ai_severity}-severity problem]"
+    with st.expander(label, expanded=False):
+        st.markdown(
+            " · ".join(f"**{d}** {v['verdict'].replace('_', ' ')}" for d, v in (turn.ai_verdicts_json or {}).items())
         )
-        if jdg.failure_types:
-            st.markdown("**Failure types:** " + ", ".join(f"`{f}`" for f in jdg.failure_types))
-        st.markdown(f"**Why:** {jdg.explanation}")
+        if turn.ai_failure_types:
+            st.markdown("**Problems:** " + ", ".join(t.replace("_", " ") for t in turn.ai_failure_types))
+        st.markdown(f"**Why:** {turn.ai_explanation}")
+        st.caption("Checked separately from your feedback: a satisfied customer doesn't make an answer correct.")
 
 
-def _render_assistant(msg: dict) -> None:
+def _render_feedback(turn: ChatTurn | None, turn_id: str, ticket: SupportTicket | None) -> None:
+    if turn is None:
+        return
+    if turn.customer_feedback is None:
+        st.markdown("**Are you satisfied with the solution provided?**")
+        b1, b2, _ = st.columns([1.2, 1.6, 2])
+        if b1.button("👍 Yes, I'm satisfied", key=f"yes_{turn_id}", use_container_width=True):
+            with get_session(engine) as session:
+                record_feedback(session, turn_id, satisfied=True)
+            st.rerun()
+        if b2.button("👎 No, I need further assistance", key=f"no_{turn_id}", use_container_width=True):
+            st.session_state[f"unhappy_{turn_id}"] = True
+        if st.session_state.get(f"unhappy_{turn_id}"):
+            with st.form(f"why_{turn_id}", border=True):
+                comment = st.text_area(
+                    "Tell us what went wrong (optional)",
+                    placeholder="e.g. The refund amount is wrong, I was charged twice.",
+                )
+                if st.form_submit_button("Send to a support executive", type="primary", icon=":material/support_agent:"):
+                    with get_session(engine) as session:
+                        record_feedback(session, turn_id, satisfied=False, comment=comment)
+                    st.session_state.pop(f"unhappy_{turn_id}", None)
+                    st.rerun()
+    elif turn.customer_feedback == "satisfied":
+        st.caption(":material/thumb_up: You were satisfied with this answer. Thank you!")
+    else:
+        st.caption(
+            ":material/thumb_down: You asked for more help"
+            + (f": \"{turn.feedback_comment}\"" if turn.feedback_comment else "")
+        )
+
+    if ticket is not None and ticket.status == "pending":
+        who = "You asked for help" if "customer" in ticket.trigger else "Our quality check flagged this answer"
+        st.info(
+            f"{who}, so ticket **{ticket.ticket_id}** is with a support executive. Their reply will appear here.",
+            icon=":material/support_agent:",
+        )
+
+
+def _render_assistant(msg: dict, turn: ChatTurn | None) -> None:
     st.markdown(msg["content"])
     tools = msg.get("tool_calls") or []
     meta = f"{msg['version']} · {msg['model']} · {msg['latency_ms'] / 1000:.1f}s · {len(tools)} tool call(s)"
@@ -218,33 +292,29 @@ def _render_assistant(msg: dict) -> None:
             for t in tools:
                 st.markdown(f"`{t['tool']}({', '.join(f'{k}={v!r}' for k, v in t['args'].items())})`")
                 st.json(t["result"], expanded=False)
-    if msg.get("grade") is not None:
-        _render_grade(msg["grade"])
 
 
-def _grade_into(msg: dict, question: str) -> None:
-    with st.spinner(f"Judge {config.judge.model_name} is grading the reply..."):
-        try:
-            msg["grade"] = grade_reply(
-                config=config,
-                snapshot=snapshot,
-                message=question,
-                reply=msg["content"],
-                policies=policies,
-            )
-        except (ChatUnavailableError, LLMError) as exc:
-            st.error(f"Grading failed: {exc}")
+turns_by_id, tickets_by_turn = _load_conversation()
 
-
-for idx, msg in enumerate(messages):
+for msg in messages:
     with st.chat_message(msg["role"]):
         if msg["role"] == "user":
             st.markdown(msg["content"])
-        else:
-            _render_assistant(msg)
-            if msg.get("grade") is None and st.button("Grade this reply", key=f"grade_{idx}"):
-                _grade_into(msg, messages[idx - 1]["content"])
-                st.rerun()
+            continue
+        turn_id = msg.get("turn_id")
+        turn = turns_by_id.get(turn_id)
+        ticket = tickets_by_turn.get(turn_id)
+        _render_assistant(msg, turn)
+        if turn_id:
+            _render_ai_check(turn, turn_id)
+            _render_feedback(turn, turn_id, ticket)
+    if ticket is not None and ticket.status == "resolved" and ticket.corrected_answer:
+        with st.chat_message("human", avatar=":material/support_agent:"):
+            st.markdown(f"**{ticket.executive_name} · NovaMart support** (ticket {ticket.ticket_id})")
+            st.markdown(ticket.corrected_answer)
+
+if any(t.status == "pending" for t in tickets_by_turn.values()):
+    st.button("Check for support replies", icon=":material/refresh:")
 
 prompt = st.chat_input(f"Message the NovaMart assistant about order {order_id}")
 if prompt:
@@ -288,17 +358,32 @@ if prompt:
                 messages.pop()
                 st.error(f"The assistant couldn't answer: {exc}")
                 st.stop()
-        reply = {
-            "role": "assistant",
-            "content": result.answer,
-            "version": version_name,
-            "model": ver_cfg.base_model,
-            "latency_ms": result.latency_ms,
-            "tool_calls": result.tool_calls,
-            "error": result.error,
-            "grade": None,
-        }
-        if auto_grade and not result.error:
-            _grade_into(reply, prompt)
-        messages.append(reply)
-        _render_assistant(reply)
+        with get_session(engine) as session:
+            turn = record_turn(
+                session,
+                conversation_id=conversation_id,
+                turn_index=len(history),
+                snapshot=snapshot,
+                version_name=version_name,
+                base_model=ver_cfg.base_model,
+                message=prompt,
+                history=history,
+                result=result,
+            )
+            new_turn_id = turn.turn_id
+        messages.append(
+            {
+                "role": "assistant",
+                "content": result.answer,
+                "version": version_name,
+                "model": ver_cfg.base_model,
+                "latency_ms": result.latency_ms,
+                "tool_calls": result.tool_calls,
+                "error": result.error,
+                "turn_id": new_turn_id,
+            }
+        )
+        st.markdown(result.answer)
+    if auto_grade and not result.error:
+        _evaluate(new_turn_id)
+    st.rerun()

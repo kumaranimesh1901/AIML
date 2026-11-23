@@ -21,6 +21,7 @@ PAGE_FILES = [
     DASHBOARD_DIR / "views" / "dataset.py",
     DASHBOARD_DIR / "views" / "comparison.py",
     DASHBOARD_DIR / "views" / "chat.py",
+    DASHBOARD_DIR / "views" / "support.py",
 ]
 
 # Patterns that would indicate hardcoded/literal metric numbers in dashboard code

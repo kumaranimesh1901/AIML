@@ -32,6 +32,7 @@ from edg.db.models import (
 from edg.db.repositories import source_judgements_only
 from edg.db.session import get_session
 from edg.metrics.judge_metrics import compute_controlled_tier_recall
+from edg.support.service import CUSTOMER_ESCALATION_TAG
 from edg.sut.failure_injector import CONTROLLED_SOURCE_TAG
 
 TTL = 30  # seconds
@@ -68,9 +69,10 @@ def conversation_counts(_db: str) -> dict[str, int]:
             select(InteractionRaw.source_tag, InteractionRaw.model_version, func.count())
             .group_by(InteractionRaw.source_tag, InteractionRaw.model_version)
         ).all()
-    natural = sum(n for tag, _, n in rows if tag != CONTROLLED_SOURCE_TAG)
+    natural = sum(n for tag, _, n in rows if tag not in (CONTROLLED_SOURCE_TAG, CUSTOMER_ESCALATION_TAG))
     planted = sum(n for tag, _, n in rows if tag == CONTROLLED_SOURCE_TAG)
-    return {"natural": natural, "planted": planted}
+    escalated = sum(n for tag, _, n in rows if tag == CUSTOMER_ESCALATION_TAG)
+    return {"natural": natural, "planted": planted, "escalated": escalated}
 
 
 @st.cache_data(ttl=TTL, show_spinner=False)

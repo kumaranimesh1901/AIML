@@ -68,6 +68,7 @@ label_app = typer.Typer(help="Failure labelling, severity resolution, and human 
 testcases_app = typer.Typer(help="Replayable test-case generation, checklists, dedupe, and variants.")
 release_app = typer.Typer(help="Immutable versioned benchmark release creation.")
 eval_app = typer.Typer(help="Model replay, frozen-judge grading, and regression detection.")
+support_app = typer.Typer(help="Customer feedback, support tickets, and re-evaluation of human corrections.")
 
 app.add_typer(db_app, name="db")
 app.add_typer(config_app, name="config")
@@ -83,6 +84,7 @@ app.add_typer(label_app, name="label")
 app.add_typer(testcases_app, name="testcases")
 app.add_typer(release_app, name="release")
 app.add_typer(eval_app, name="eval")
+app.add_typer(support_app, name="support")
 
 logger = get_logger(__name__)
 
@@ -793,6 +795,64 @@ def run_all(
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(res, indent=2, default=str))
+
+
+@support_app.command("reevaluate")
+def support_reevaluate(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Path to YAML config."),
+    small: bool = typer.Option(False, "--small", help="Use the small development config profile."),
+    database_url: str | None = typer.Option(None, "--db-url", help="Override database URL."),
+) -> None:
+    """Re-evaluate every queued human correction with the frozen judge (real local models only).
+
+    Validated corrections become candidate test cases; approve them on the dashboard's Test
+    Dataset page before the next `edg release create`."""
+    from sqlalchemy import select as sa_select
+
+    from edg.db.models import SupportTicket
+    from edg.support import SupportError, reevaluate_ticket
+    from edg.sut.chat import ChatUnavailableError
+
+    overrides = {"database": {"url": database_url}} if database_url else None
+    cfg = load_config(config_path, small=small, overrides=overrides)
+    setup_logging(cfg.logging)
+    engine = init_db(cfg.database.url, use_alembic=True, echo=cfg.database.echo)
+    with get_session(engine) as session:
+        queued = list(
+            session.scalars(
+                sa_select(SupportTicket.ticket_id).where(SupportTicket.reeval_status == "queued")
+            ).all()
+        )
+    if not queued:
+        typer.echo("No human corrections are waiting for re-evaluation.")
+        return
+    results: dict[str, int] = {}
+    for tid in queued:
+        try:
+            ticket = reevaluate_ticket(engine, cfg, tid)
+        except (SupportError, ChatUnavailableError) as exc:
+            typer.echo(f"ERROR: {tid}: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        results[ticket.reeval_status] = results.get(ticket.reeval_status, 0) + 1
+        extra = f" -> candidate {ticket.promoted_test_case_id}" if ticket.promoted_test_case_id else ""
+        typer.echo(f"{tid}: {ticket.reeval_status}{extra}")
+    typer.echo(json.dumps(results))
+
+
+@support_app.command("stats")
+def support_stats(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Path to YAML config."),
+    small: bool = typer.Option(False, "--small", help="Use the small development config profile."),
+    database_url: str | None = typer.Option(None, "--db-url", help="Override database URL."),
+) -> None:
+    """Print customer satisfaction, escalation and ticket counts."""
+    from edg.support import support_metrics
+
+    overrides = {"database": {"url": database_url}} if database_url else None
+    cfg = load_config(config_path, small=small, overrides=overrides)
+    engine = init_db(cfg.database.url, use_alembic=True, echo=cfg.database.echo)
+    with get_session(engine) as session:
+        typer.echo(json.dumps(support_metrics(session), indent=2, default=str))
 
 
 if __name__ == "__main__":

@@ -30,6 +30,17 @@ edg run-all --small --provider fake --no-hf --no-st --no-spacy
 streamlit run dashboard/app.py
 ```
 
+### Customer feedback and support escalation
+
+The dashboard's **Chat Assistant** asks *"Are you satisfied with the solution provided?"* after every
+answer, and an AI quality check (the frozen judge) grades each answer separately. A turn escalates
+to a support ticket when the customer says no **or** the judge/verification finds a serious error
+(high/critical severity or a claim that contradicts the order record), even if the customer was
+satisfied. On the **Support Desk** page an executive sends a corrected answer to the customer; the
+judge re-evaluates it, and a validated correction becomes a gold *candidate* test case (approve it
+on Test Dataset to include it in the next release). Batch re-evaluation: `edg support reevaluate`;
+counts: `edg support stats`. Tables: `chat_turns`, `support_tickets` (migration 0003).
+
 ### Running with Docker Compose (PostgreSQL 16 + pgvector + Ollama)
 
 ```bash

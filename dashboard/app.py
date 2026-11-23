@@ -29,6 +29,9 @@ navigation = st.navigation(
             _page("home.py", "Home", ":material/home:", default=True),
             _page("chat.py", "Chat Assistant", ":material/forum:"),
         ],
+        "Support": [
+            _page("support.py", "Support Desk", ":material/support_agent:"),
+        ],
         "How the pipeline works": [
             _page("conversations.py", "Conversations", ":material/chat_bubble:"),
             _page("topics.py", "Topics & Clusters", ":material/bubble_chart:"),
