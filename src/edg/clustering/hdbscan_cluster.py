@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import hdbscan
 import numpy as np
 
 
@@ -36,6 +35,8 @@ def fit_hdbscan(
         raise ValueError(
             "HDBSCAN must never run on the 2D plot projection; pass the 10D clustering space."
         )
+
+    import hdbscan  # ml extra; imported here so the dashboard runs without it
 
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=min_cluster_size,

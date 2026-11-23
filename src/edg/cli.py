@@ -136,7 +136,7 @@ def db_snapshot(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     size_mb = out.stat().st_size / 1_000_000
-    typer.echo(f"Saved {out} ({size_mb:.1f} MB). Commit it with: git add -f {out} data/demo")
+    typer.echo(f"Saved {out} ({size_mb:.1f} MB). Commit it with: git add data/demo")
     if size_mb > 95:
         typer.echo("Warning: GitHub rejects files over 100 MB.", err=True)
 

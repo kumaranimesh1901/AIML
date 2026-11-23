@@ -39,6 +39,10 @@ ml = [
 dashboard = [
     "streamlit>=1.45.0",  # st.navigation, st.pills, segmented_control, dataframe row selection
     "plotly>=5.22.0",
+    # the metrics the dashboard and the `edg` CLI import (no models, no downloads)
+    "scikit-learn>=1.4.2",
+    "scipy>=1.13.0",
+    "statsmodels>=0.14.2",
 ]
 dev = [
     "pytest>=8.2.0",
