@@ -8,6 +8,7 @@ import streamlit as st
 from sqlalchemy import Engine
 
 from edg.config import load_config
+from edg.db.demo import seed_from_demo
 from edg.db.session import create_db_engine
 
 
@@ -20,6 +21,8 @@ def get_database_url() -> str:
 
 @st.cache_resource
 def get_dashboard_engine(database_url: str) -> Engine:
+    # A fresh clone that skipped `edg db init` still opens with the bundled real results
+    seed_from_demo(database_url)
     return create_db_engine(database_url, echo=False)
 
 

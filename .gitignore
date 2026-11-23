@@ -16,6 +16,8 @@ htmlcov/
 *.db
 *.sqlite
 *.sqlite3
+# Bundled results of a real run (edg db snapshot), so a fresh clone opens the dashboard
+!data/demo/edg_demo.db
 
 # Generated data (keep directory structure)
 data/raw/*

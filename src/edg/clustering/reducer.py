@@ -5,7 +5,6 @@ from __future__ import annotations
 import warnings
 
 import numpy as np
-import umap
 
 from edg.config import ClusteringConfig
 
@@ -26,6 +25,8 @@ def reduce_umap(
 
     eff_neighbors = max(2, min(n_neighbors, n_samples - 1))
     eff_components = min(n_components, n_samples - 2)
+
+    import umap  # ml extra; imported here so the dashboard runs without it
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

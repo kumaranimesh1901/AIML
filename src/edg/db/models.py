@@ -663,3 +663,80 @@ class LLMCacheEntry(Base):
     response_text: Mapped[str] = mapped_column(Text, nullable=False)
     latency_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class ChatTurn(Base):
+    """One customer message and the chatbot's reply in the live chat, with its two separate
+    evaluation signals: the AI judge's verdict (technical correctness) and the customer's own
+    feedback (satisfaction). Neither signal overrides the other."""
+
+    __tablename__ = "chat_turns"
+
+    turn_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    turn_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    order_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    snapshot_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("state_snapshots.snapshot_id"), nullable=False, index=True
+    )
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    base_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    user_query: Mapped[str] = mapped_column(Text, nullable=False)
+    ai_response: Mapped[str] = mapped_column(Text, nullable=False)
+    history_json: Mapped[list[Any]] = mapped_column(JSONType, nullable=False, default=list)
+    tool_calls_json: Mapped[list[Any]] = mapped_column(JSONType, nullable=False, default=list)
+    latency_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Signal 1: AI evaluation (pending | done | error | skipped)
+    eval_status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    ai_failure_detected: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
+    ai_severity: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ai_failure_types: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list)
+    ai_verdicts_json: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
+    ai_claim_checks_json: Mapped[list[Any]] = mapped_column(JSONType, nullable=False, default=list)
+    ai_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    judge_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    judge_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Signal 2: customer feedback (satisfied | dissatisfied)
+    customer_feedback: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    feedback_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feedback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class SupportTicket(Base):
+    """An escalated chat turn, handled by a support executive and re-evaluated by the judge."""
+
+    __tablename__ = "support_tickets"
+
+    ticket_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    turn_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("chat_turns.turn_id"), nullable=False, unique=True, index=True
+    )
+    conversation_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # customer | ai_judge | customer_and_ai_judge
+    trigger: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    priority: Mapped[str] = mapped_column(String(16), nullable=False, default="normal", index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    escalation_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    executive_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    corrected_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_to_customer: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # not_started | queued | validated | failed_validation | error
+    reeval_status: Mapped[str] = mapped_column(String(24), nullable=False, default="not_started", index=True)
+    reeval_json: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict)
+    reeval_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    promoted_interaction_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    promoted_test_case_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
