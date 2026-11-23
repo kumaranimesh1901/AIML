@@ -1,6 +1,6 @@
 # Automated Evaluation Dataset Generator from Production Logs (EDG)
 
-A complete, tested ML engineering pipeline that simulates an e-commerce customer-support assistant (**NovaMart**), logs and cleans production-style interactions, discovers semantic categories and edge cases with **UMAP + HDBSCAN**, grades answers with an **evidence-based hybrid LLM judge** calibrated against human annotations, freezes **immutable versioned benchmark releases**, replays multiple model versions with **statistically rigorous regression detection**, and presents all metrics in a **8-page Streamlit dashboard** (including a live Chat Assistant page).
+A complete, tested ML engineering pipeline that simulates an e-commerce customer-support assistant (**NovaMart**), logs and cleans production-style interactions, discovers semantic categories and edge cases with **UMAP + HDBSCAN**, grades answers with an **evidence-based hybrid LLM judge** calibrated against human annotations, freezes **immutable versioned benchmark releases**, replays multiple model versions with **statistically rigorous regression detection**, and presents all metrics in a **interactive Streamlit dashboard** (headline results, a live Chat Assistant, and one page per pipeline stage).
 
 ---
 
@@ -25,7 +25,8 @@ pip install scikit-learn umap-learn hdbscan scipy statsmodels
 # Run the complete pipeline end-to-end on the --small profile (~500 queries)
 edg run-all --small --provider fake --no-hf --no-st --no-spacy
 
-# Launch the 8-page Streamlit dashboard (page 8 chats with the assistant on local Ollama)
+# Launch the dashboard: a home page of headline results, a live Chat Assistant on local Ollama,
+# and one page per pipeline stage
 streamlit run dashboard/app.py
 ```
 

@@ -23,7 +23,15 @@ from edg.sut.chat import (
 )
 from edg.sut.tools import SnapshotToolBox
 
-CHAT_PAGE = Path(__file__).resolve().parents[2] / "dashboard" / "pages" / "8_Chat_Assistant.py"
+DASHBOARD_DIR = Path(__file__).resolve().parents[2] / "dashboard"
+CHAT_PAGE = DASHBOARD_DIR / "views" / "chat.py"
+
+
+def run_page(page_path: Path) -> AppTest:
+    at = AppTest.from_file(str(DASHBOARD_DIR / "app.py"), default_timeout=30)
+    at.switch_page(str(page_path.relative_to(DASHBOARD_DIR)))
+    at.run()
+    return at
 
 
 class _StubClient(BaseLLMClient):
@@ -141,8 +149,7 @@ def test_grade_reply_runs_judge_without_a_session() -> None:
 def test_chat_page_explains_when_ollama_is_down(monkeypatch: pytest.MonkeyPatch, small_pipeline_db: str) -> None:
     monkeypatch.setenv("EDG_DATABASE_URL", small_pipeline_db)
     monkeypatch.setattr("edg.sut.chat.ollama_status", lambda *_a, **_k: (False, [], "connection refused"))
-    at = AppTest.from_file(str(CHAT_PAGE), default_timeout=30)
-    at.run()
+    at = run_page(CHAT_PAGE)
     assert not at.exception
     assert any("ollama serve" in e.value for e in at.error)
 
@@ -159,8 +166,7 @@ def test_chat_page_answers_a_message(monkeypatch: pytest.MonkeyPatch, small_pipe
         return AssistantResult(answer="It is on the way.", model_version=kwargs["version_name"], latency_ms=1200.0)
 
     monkeypatch.setattr("edg.sut.chat.chat_reply", _fake_reply)
-    at = AppTest.from_file(str(CHAT_PAGE), default_timeout=30)
-    at.run()
+    at = run_page(CHAT_PAGE)
     assert not at.exception
     at.chat_input[0].set_value("Where is my order?").run()
     assert not at.exception

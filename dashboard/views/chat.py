@@ -1,4 +1,4 @@
-"""Page 8: Chat with the NovaMart support assistant (the SUT) on a real local Ollama model.
+"""Chat Assistant: chat with the NovaMart support assistant (the SUT) on a real local Ollama model.
 
 The assistant answers with the same tool-calling loop the pipeline uses, bound to one order's
 state snapshot, and each reply can be graded live by the frozen hybrid judge. Nothing from this
@@ -18,6 +18,7 @@ import pandas as pd
 import streamlit as st
 from db_helper import get_database_url, get_engine
 from sqlalchemy.exc import OperationalError
+from ui import kpi, page_header
 
 from edg.config import load_config
 from edg.db.session import get_session
@@ -37,11 +38,23 @@ from edg.sut.chat import (
     summarize_snapshot,
 )
 
-st.set_page_config(page_title="Chat Assistant | EDG", layout="wide")
-st.title("8. Chat Assistant")
-st.caption(
-    "Ask the NovaMart support assistant a customer question. It looks up the selected order with "
-    "its tools and answers on a real local Ollama model. Chats are not saved to the database."
+# Example questions per hard-state tag, so a demo can jump straight to the tricky cases
+EXAMPLES_BY_TAG = {
+    "duplicate_charge": "I was charged twice for this order. Can I get my money back?",
+    "delivered_disputed": "The tracking says delivered but I never got my package. What now?",
+    "past_return_window": "Can I still return this order for a refund?",
+    "boundary_return_window": "Am I still within the return window for this order?",
+    "partial_shipment": "I only received part of my order. Where is the rest?",
+    "cancel_after_shipping": "Please cancel this order, I don't want it anymore.",
+    "refund_approved_not_issued": "My refund was approved but I haven't received it. When will it arrive?",
+    "wrong_item_delivered": "I received the wrong item. How do I get the right one?",
+}
+GENERIC_EXAMPLES = ["Where is my order and when will it arrive?", "Can I return this order?"]
+
+page_header(
+    "Chat Assistant",
+    "Ask the NovaMart support chatbot a customer question about an order. It looks the order up with "
+    "its tools and answers on a real local Ollama model. Chats are not saved.",
 )
 
 config = load_config()
@@ -125,8 +138,10 @@ with st.sidebar:
         value=False,
         help="Slower: the judge checks the reply against the order snapshot and store policies.",
     )
-    if st.button("New chat", use_container_width=True):
+    if st.button("New chat", icon=":material/refresh:", use_container_width=True):
         st.session_state["chat_messages"] = []
+        for key in [k for k in st.session_state if str(k).startswith("examples_")]:
+            del st.session_state[key]
 
 with get_session(engine) as session:
     snapshot = load_order_snapshot(session, order_id)
@@ -154,17 +169,17 @@ chat_key = (order_id, version_name)
 if st.session_state.get("chat_key") != chat_key:
     st.session_state["chat_key"] = chat_key
     st.session_state["chat_messages"] = []
+    st.session_state.pop(f"examples_{order_id}", None)
 messages: list[dict] = st.session_state.setdefault("chat_messages", [])
 
 summary = summarize_snapshot(snapshot.snapshot_json)
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Order", summary["order_id"])
-c2.metric("Status", str(summary["status"]).replace("_", " "))
-c3.metric("Total", f"${summary['total_amount']:.2f}" if summary["total_amount"] is not None else "n/a")
-c4.metric("Shipments · Returns", f"{summary['shipments']} · {summary['returns']}")
-with st.expander("What the assistant can see for this order (state snapshot)"):
-    st.caption("Hard-state tags: " + (", ".join(snapshot.hard_state_tags or []) or "none"))
-    st.json(snapshot.snapshot_json, expanded=False)
+kpi(c1, "Order", str(summary["order_id"]), ", ".join(t.replace("_", " ") for t in snapshot.hard_state_tags or []) or "normal order")
+kpi(c2, "Status", str(summary["status"]).replace("_", " "), f"placed {summary['placed_at']}" if summary["placed_at"] else "")
+kpi(c3, "Total", f"${summary['total_amount']:.2f}" if summary["total_amount"] is not None else "n/a", f"{summary['items']} item(s)")
+kpi(c4, "Shipments · Returns", f"{summary['shipments']} · {summary['returns']}", f"{summary['payments']} payment(s)")
+with st.expander("What the chatbot can see for this order"):
+    st.json(snapshot.snapshot_json, expanded=1)
 
 
 def _render_grade(jdg) -> None:  # noqa: ANN001
@@ -243,10 +258,12 @@ if prompt:
 
 prompt = prompt or st.session_state.pop("chat_pending_prompt", None)
 if not messages and not prompt:
-    st.info(
-        f"Try: \"Where is my order {order_id}?\", \"I was charged twice, can I get a refund?\" "
-        "or \"Can I still return this?\""
-    )
+    examples = [EXAMPLES_BY_TAG[t] for t in snapshot.hard_state_tags or [] if t in EXAMPLES_BY_TAG]
+    examples += [e for e in GENERIC_EXAMPLES if e not in examples]
+    st.markdown("**Try a question** (or type your own below)")
+    clicked = st.pills("Example questions", examples[:4], key=f"examples_{order_id}", label_visibility="collapsed")
+    if clicked:
+        prompt = clicked
 if prompt:
     history = [
         (messages[i]["content"], messages[i + 1]["content"])

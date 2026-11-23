@@ -1,42 +1,48 @@
-"""Streamlit main entrypoint for Automated Evaluation Dataset Generator (EDG)."""
+"""Streamlit entrypoint for the EDG dashboard: page navigation and shared sidebar."""
 
 from __future__ import annotations
 
-import pandas as pd
+import sys
+from pathlib import Path
+
+_DASH_DIR = Path(__file__).resolve().parent
+if str(_DASH_DIR) not in sys.path:
+    sys.path.insert(0, str(_DASH_DIR))
+
 import streamlit as st
-from db_helper import get_database_url, get_engine
-from sqlalchemy import select
+from db_helper import get_database_url
 
-from edg.db.models import PipelineRun
-from edg.db.session import get_session
+st.set_page_config(
+    page_title="EDG · NovaMart AI Support Evaluation",
+    page_icon=":material/insights:",
+    layout="wide",
+)
 
-st.set_page_config(page_title="EDG Dashboard", layout="wide")
-st.title("Automated Evaluation Dataset Generator (EDG)")
-st.caption(f"Connected database: `{get_database_url()}` — all values read live from database tables.")
 
-engine = get_engine()
-with get_session(engine) as session:
-    recent_runs = list(
-        session.scalars(
-            select(PipelineRun).order_by(PipelineRun.started_at.desc()).limit(10)
-        ).all()
-    )
+def _page(file: str, title: str, icon: str, **kwargs: object) -> st.Page:
+    return st.Page(str(_DASH_DIR / "views" / file), title=title, icon=icon, **kwargs)
 
-st.subheader("Recent Pipeline Runs")
-if recent_runs:
-    df_runs = pd.DataFrame(
-        [
-            {
-                "run_id": r.run_id,
-                "step": r.step,
-                "status": r.status,
-                "config_hash": r.config_hash[:12],
-                "git_commit": r.git_commit,
-                "started_at": str(r.started_at),
-            }
-            for r in recent_runs
-        ]
-    )
-    st.dataframe(df_runs, use_container_width=True)
-else:
-    st.info("No pipeline runs recorded yet. Run `edg run-all --small` to populate the database.")
+
+navigation = st.navigation(
+    {
+        "Overview": [
+            _page("home.py", "Home", ":material/home:", default=True),
+            _page("chat.py", "Chat Assistant", ":material/forum:"),
+        ],
+        "How the pipeline works": [
+            _page("conversations.py", "Conversations", ":material/chat_bubble:"),
+            _page("topics.py", "Topics & Clusters", ":material/bubble_chart:"),
+            _page("edge_cases.py", "Edge Cases", ":material/warning:"),
+            _page("judge.py", "AI Judge", ":material/gavel:"),
+        ],
+        "Results": [
+            _page("dataset.py", "Test Dataset", ":material/fact_check:"),
+            _page("comparison.py", "v1 vs v2", ":material/compare_arrows:"),
+        ],
+    }
+)
+
+with st.sidebar:
+    st.caption(f"Data: `{Path(get_database_url().removeprefix('sqlite:///')).name}` · every number is read live")
+
+navigation.run()
