@@ -9,7 +9,9 @@ server you host); the fake provider is refused.
 
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import Iterator
 from typing import Any
 
 import httpx
@@ -54,6 +56,59 @@ def missing_models(installed: list[str], wanted: list[str]) -> list[str]:
     have = set(installed)
     have |= {n.removesuffix(":latest") for n in installed}
     return [m for m in dict.fromkeys(wanted) if m not in have and f"{m}:latest" not in have]
+
+
+# Approximate download sizes, shown before a download starts
+MODEL_SIZES = {"qwen2.5:1.5b": "1 GB", "qwen2.5:3b": "1.9 GB", "qwen2.5:7b": "4.7 GB", "qwen2.5:14b": "9 GB"}
+
+
+def required_models(config: AppConfig) -> list[tuple[str, str]]:
+    """`(model, role)` for every local model the live features use: each assistant version, the
+    frozen judge, and the helper that writes re-evaluation checklists. A model used in two roles
+    is listed once."""
+    roles: dict[str, list[str]] = {}
+    for name, ver in config.sut.versions.items():
+        if ver.provider == "ollama":
+            roles.setdefault(ver.base_model, []).append(f"{name} assistant")
+    if config.judge.provider == "ollama":
+        roles.setdefault(config.judge.model_name, []).append("AI judge")
+    roles.setdefault(config.llm.helper_model, []).append("helper")
+    return [(model, ", ".join(r)) for model, r in roles.items()]
+
+
+def check_models(config: AppConfig) -> dict[str, Any]:
+    """Whether Ollama is reachable and which required models it has.
+
+    Returns `{"reachable", "error", "base_url", "models": [{"model", "role", "installed"}]}`."""
+    base_url = config.llm.ollama_base_url
+    reachable, installed, error = ollama_status(base_url)
+    absent = set(missing_models(installed, [m for m, _ in required_models(config)])) if reachable else None
+    return {
+        "reachable": reachable,
+        "error": error,
+        "base_url": base_url,
+        "models": [
+            {"model": m, "role": role, "installed": bool(reachable and m not in (absent or set()))}
+            for m, role in required_models(config)
+        ],
+    }
+
+
+def pull_model(base_url: str, model: str, *, timeout_seconds: float = 30.0) -> Iterator[dict[str, Any]]:
+    """Download a model through Ollama's `/api/pull`, yielding its progress messages
+    (`{"status", "total"?, "completed"?}`). Raises RuntimeError if Ollama reports an error."""
+    timeout = httpx.Timeout(timeout_seconds, read=None)  # a layer can take minutes between messages
+    with httpx.stream(
+        "POST", f"{base_url.rstrip('/')}/api/pull", json={"model": model, "stream": True}, timeout=timeout
+    ) as resp:
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            if not line.strip():
+                continue
+            msg = json.loads(line)
+            if msg.get("error"):
+                raise RuntimeError(str(msg["error"]))
+            yield msg
 
 
 def build_live_client(config: AppConfig, *, provider: str, model: str) -> BaseLLMClient:

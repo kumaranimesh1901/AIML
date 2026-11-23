@@ -6,11 +6,26 @@ import sys
 from pathlib import Path
 
 _DASH_DIR = Path(__file__).resolve().parent
-if str(_DASH_DIR) not in sys.path:
-    sys.path.insert(0, str(_DASH_DIR))
+# The dashboard helpers, and the `edg` package itself (so a `streamlit` from outside the
+# project's virtual environment can still find it)
+for _path in (_DASH_DIR.parent / "src", _DASH_DIR):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 import streamlit as st
-from db_helper import get_database_url
+
+try:
+    from db_helper import get_database_url
+    from model_check import render_model_status
+
+    from edg.config import load_config
+except ImportError as exc:  # streamlit started from a Python without the project's packages
+    st.error(
+        f"This Streamlit is running on a Python that lacks the project's packages ({exc}). "
+        "Start it from the project's virtual environment instead:\n\n"
+        "```\nsource .venv/bin/activate\npython -m streamlit run dashboard/app.py\n```"
+    )
+    st.stop()
 
 st.set_page_config(
     page_title="EDG · NovaMart AI Support Evaluation",
@@ -47,5 +62,6 @@ navigation = st.navigation(
 
 with st.sidebar:
     st.caption(f"Data: `{Path(get_database_url().removeprefix('sqlite:///')).name}` · every number is read live")
+    render_model_status(load_config(), compact=True)
 
 navigation.run()
