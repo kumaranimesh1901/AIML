@@ -18,6 +18,7 @@ if _DASH_DIR not in sys.path:
 
 import streamlit as st
 from db_helper import get_database_url, get_engine
+from model_check import model_status, render_model_status
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from ui import kpi, load_or_wait, page_header
@@ -37,7 +38,6 @@ from edg.sut.chat import (
     load_order_snapshot,
     load_policies,
     missing_models,
-    ollama_status,
     summarize_snapshot,
 )
 
@@ -88,14 +88,12 @@ if config.llm.provider == "fake":
     )
     st.stop()
 
-reachable, installed, ollama_error = ollama_status(config.llm.ollama_base_url)
-if not reachable:
-    st.error(
-        f"Can't reach Ollama at `{config.llm.ollama_base_url}`. Start it with `ollama serve` "
-        "(or open the Ollama app) and reload this page."
-    )
-    st.caption(f"Details: {ollama_error}")
+model_check = model_status(config)
+if not model_check["reachable"]:
+    render_model_status(config, compact=False)
+    st.caption(f"Details: {model_check['error']}")
     st.stop()
+installed = [m["model"] for m in model_check["models"] if m["installed"]]
 
 # ---- The store must be built far enough to have order snapshots ------------------------------
 try:
@@ -169,13 +167,16 @@ ver_cfg = config.sut.versions[version_name]
 needed = [ver_cfg.base_model] + ([config.judge.model_name] if auto_grade else [])
 absent = missing_models(installed, needed)
 if absent:
-    st.error(
-        "Ollama is running but doesn't have "
-        + ", ".join(f"`{m}`" for m in absent)
-        + ". Pull it with "
-        + " and ".join(f"`ollama pull {m}`" for m in absent)
-        + ", then reload."
+    st.warning(
+        "This chat needs " + " and ".join(f"`{m}`" for m in absent) + ", which Ollama doesn't have "
+        "yet. Download it below (or run `ollama pull <model>` in a terminal)."
+        + (
+            " To chat without the judge for now, turn off *AI quality check* in the sidebar."
+            if config.judge.model_name in absent
+            else ""
+        )
     )
+    render_model_status(config, compact=False)
     st.stop()
 
 policies = _policies(get_database_url(), snapshot.policy_version)

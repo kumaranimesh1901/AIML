@@ -780,6 +780,60 @@ def eval_compare(
     typer.echo(json.dumps(res, indent=2))
 
 
+@app.command("doctor")
+def doctor(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="Path to YAML config."),
+    small: bool = typer.Option(False, "--small", help="Use the small development config profile."),
+    pull: bool | None = typer.Option(
+        None, "--pull/--no-pull", help="Download missing models without asking (--pull) or never (--no-pull)."
+    ),
+) -> None:
+    """Check that Ollama runs and has the v1 and v2 assistants and the judge; offer to download any missing."""
+    from edg.sut.chat import MODEL_SIZES, check_models, pull_model
+
+    cfg = load_config(config_path, small=small)
+    if cfg.llm.provider == "fake":
+        typer.echo("LLM provider is 'fake' (tests only). Unset EDG_LLM_PROVIDER to use real Ollama models.")
+        raise typer.Exit(code=1)
+    status = check_models(cfg)
+    if not status["reachable"]:
+        typer.echo(f"✗ Ollama is not running at {status['base_url']} ({status['error']}).")
+        typer.echo("  Open the Ollama app (or run `ollama serve`), then run `edg doctor` again.")
+        typer.echo("  Install it from https://ollama.com/download if you don't have it.")
+        raise typer.Exit(code=1)
+    typer.echo(f"✓ Ollama is running at {status['base_url']}")
+    missing = []
+    for m in status["models"]:
+        typer.echo(f"{'✓' if m['installed'] else '✗'} {m['model']:<14} {m['role']}{'' if m['installed'] else '  (missing)'}")
+        if not m["installed"]:
+            missing.append(m["model"])
+    failed = []
+    for model in missing:
+        if pull is False or (pull is None and not typer.confirm(f"Download {model} now (about {MODEL_SIZES.get(model, 'several GB')})?", default=True)):
+            failed.append(model)
+            continue
+        last = ""
+        try:
+            for msg in pull_model(status["base_url"], model):
+                total, done = msg.get("total"), msg.get("completed")
+                line = (
+                    f"  {model}: {done / 1e9:.2f} / {total / 1e9:.2f} GB"
+                    if total and done is not None
+                    else f"  {model}: {msg.get('status', '')}"
+                )
+                if line != last:
+                    typer.echo(f"\r{line:<60}", nl=False)
+                    last = line
+            typer.echo(f"\r  ✓ {model} downloaded{'':<40}")
+        except Exception as exc:  # noqa: BLE001 - report and continue with the next model
+            typer.echo(f"\n  ✗ couldn't download {model}: {exc}")
+            failed.append(model)
+    if failed:
+        typer.echo("Still missing: " + ", ".join(failed) + ". Run: " + " && ".join(f"ollama pull {m}" for m in failed))
+        raise typer.Exit(code=1)
+    typer.echo("All set: the Chat Assistant and the AI quality check can run.")
+
+
 @app.command("run-all")
 def run_all(
     config_path: Path | None = typer.Option(None, "--config", "-c", help="Path to YAML config."),

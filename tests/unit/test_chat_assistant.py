@@ -146,12 +146,31 @@ def test_grade_reply_runs_judge_without_a_session() -> None:
     assert client.requests[-1].model == cfg.judge.model_name
 
 
+@pytest.fixture(autouse=True)
+def _fresh_model_check() -> None:
+    """The dashboard caches the Ollama check for a few seconds; each test fakes its own Ollama."""
+    import streamlit as st
+
+    st.cache_data.clear()
+
+
 def test_chat_page_explains_when_ollama_is_down(monkeypatch: pytest.MonkeyPatch, small_pipeline_db: str) -> None:
     monkeypatch.setenv("EDG_DATABASE_URL", small_pipeline_db)
     monkeypatch.setattr("edg.sut.chat.ollama_status", lambda *_a, **_k: (False, [], "connection refused"))
     at = run_page(CHAT_PAGE)
     assert not at.exception
-    assert any("ollama serve" in e.value for e in at.error)
+    assert any("Ollama is not running" in m.value for m in at.markdown)
+    assert any("ollama serve" in m.value for m in at.markdown)
+
+
+def test_chat_page_offers_to_download_a_missing_model(monkeypatch: pytest.MonkeyPatch, small_pipeline_db: str) -> None:
+    monkeypatch.setenv("EDG_DATABASE_URL", small_pipeline_db)
+    monkeypatch.setattr("edg.sut.chat.ollama_status", lambda *_a, **_k: (True, ["qwen2.5:7b"], None))
+    at = run_page(CHAT_PAGE)
+    assert not at.exception
+    labels = [b.label for b in at.button]
+    assert any(label.startswith("Download (9 GB)") for label in labels)  # the 14b judge
+    assert any(label.startswith("Download (1 GB)") for label in labels)  # the v1 assistant
 
 
 def test_chat_page_answers_a_message(monkeypatch: pytest.MonkeyPatch, small_pipeline_db: str) -> None:

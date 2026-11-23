@@ -29,13 +29,15 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dashboard]"
 edg db init
-streamlit run dashboard/app.py
+python -m streamlit run dashboard/app.py
 ```
 
 The dashboard opens at http://localhost:8501. `edg db init` copies the bundled results into
 `data/edg.db` (your own working copy, ignored by git) the first time, and never replaces a
 database that already holds data. Next time, only `cd aiml`, `source .venv/bin/activate` and
-`streamlit run dashboard/app.py` are needed.
+`python -m streamlit run dashboard/app.py` are needed. Use `python -m streamlit`, not plain
+`streamlit`: it makes sure the project's own Python is used, even if another Streamlit is
+installed on your Mac (for example through Homebrew).
 
 | Page | What it shows | Needs Ollama? |
 |---|---|---|
@@ -54,9 +56,13 @@ ollama pull qwen2.5:7b     # v2 assistant and helper, about 4.7 GB
 ollama pull qwen2.5:14b    # frozen AI judge, about 9 GB
 ```
 
-Keep Ollama running and refresh the Chat Assistant page. The page tells you which model is
-missing if one is not pulled yet. Answers take a few seconds each on an M-series Mac, plus a few
-more when the AI quality check is on.
+Or let the project do it: the **Local models** box in the dashboard's sidebar shows whether
+Ollama is running and whether the v1 and v2 assistants and the judge are there, with a
+**Download** button (and a progress bar) for each one that is missing. From the terminal,
+`edg doctor` runs the same check and asks before downloading each missing model
+(`edg doctor --pull` downloads without asking).
+
+Answers take a few seconds each on an M-series Mac, plus a few more when the AI quality check is on.
 
 ### Customer feedback and support escalation
 
@@ -85,7 +91,7 @@ python -m spacy download en_core_web_sm
 rm -f data/edg.db               # start from an empty database (the bundled copy stays in data/demo)
 edg db init --empty
 edg run-all --small --hf --st --spacy
-streamlit run dashboard/app.py
+python -m streamlit run dashboard/app.py
 ```
 
 | Profile | Command | Time on an M-series MacBook Pro |
@@ -119,6 +125,7 @@ docker compose exec app edg run-all --small
 | Command | Description |
 |---|---|
 | `edg db init [--small] [--empty]` | Run Alembic migrations to create all EDG tables; on a fresh clone, first load the bundled results unless `--empty` |
+| `edg doctor [--pull]` | Check that Ollama runs and has the v1/v2 assistants and the judge; offer to download any that is missing |
 | `edg db snapshot` | Save the current run's results to `data/demo/edg_demo.db` so they can be committed and shared |
 | `edg db status` | Show existing database tables |
 | `edg config show / hash [--small]` | Inspect resolved config and deterministic SHA-256 hash |
